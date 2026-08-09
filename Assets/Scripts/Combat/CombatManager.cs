@@ -4,6 +4,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Serialization;
 using Tactica.Grid;
+using Tactica.Stats;
 
 namespace Tactica.Combat
 {
@@ -15,6 +16,11 @@ namespace Tactica.Combat
                  "with encounter setup.")]
         [FormerlySerializedAs("ParticipatingUnits")]
         [SerializeField] private List<GridUnit> participatingUnits = new List<GridUnit>();
+
+        // TEMPORARY TEST WIRING - REMOVE once ability selection UI exists.
+        [Header("Debug (temporary)")]
+        [Tooltip("TEMPORARY: ability used by the Test Execute Ability context-menu action.")]
+        [SerializeField] private AbilityDefinition testAbility;
 
         public CombatState CurrentState { get; private set; } = CombatState.CombatEnd;
 
@@ -38,6 +44,11 @@ namespace Tactica.Combat
 
         // INTENTIONAL API: unused today, for a turn-order UI strip.
         public IReadOnlyList<GridUnit> TurnOrder => initiativeOrder;
+
+        // Stateless rules engine, so one instance serves the whole encounter. Owned here because
+        // CombatManager is what decides when an action may be attempted; the resolver only decides
+        // whether it is legal and what it does.
+        public ActionResolver Resolver { get; } = new ActionResolver();
 
         // Builds initiative and hands the first unit its turn.
         //
@@ -83,14 +94,47 @@ namespace Tactica.Combat
         }
 
         // Passes the turn to the next unit in initiative order, wrapping to the start.
+        // Refuses to advance once the encounter is over.
         public void EndCurrentTurn()
         {
-            if (initiativeOrder.Count == 0 || CurrentState == CombatState.CombatEnd)
+            if (CurrentState == CombatState.CombatEnd)
+            {
+                // Logged rather than silently ignored: a turn button that stops responding with no
+                // explanation reads as a bug, and this is the most likely reason it happened.
+                Debug.Log(
+                    $"{nameof(CombatManager)}: combat is over, no further turns. " +
+                    $"Call {nameof(StartCombat)} to begin a new encounter.",
+                    this);
+                return;
+            }
+
+            if (initiativeOrder.Count == 0)
             {
                 return;
             }
 
             CurrentState = CombatState.TurnTransition;
+
+            // TIMING GAP: the only end-condition check is here, at the turn boundary. A unit KO'd
+            // mid-turn therefore does not end combat until the acting player presses End Turn, so
+            // a wiped-out side can still be "targeted" for the rest of that turn. Closing this
+            // means ActionResolver calling back into CombatManager after each action, which is a
+            // bigger change (the resolver currently knows nothing about turn structure and is
+            // testable precisely because of that). Checking here is enough for now.
+            CombatEndResult result = CheckCombatEndCondition();
+
+            if (result != CombatEndResult.Ongoing)
+            {
+                CurrentState = CombatState.CombatEnd;
+
+                Debug.Log($"=== COMBAT OVER: {result} (round {RoundNumber}) ===", this);
+
+                // Null tells listeners there is no active unit any more - GridManager clears its
+                // move-range highlight on this, so the board does not keep showing a dead unit's
+                // reachable tiles after the encounter ends.
+                OnActiveUnitChanged?.Invoke(null);
+                return;
+            }
 
             activeIndex = (activeIndex + 1) % initiativeOrder.Count;
 
@@ -109,6 +153,56 @@ namespace Tactica.Combat
             Debug.Log($"Round {RoundNumber} - {GetActiveUnit().name}'s turn.", this);
 
             OnActiveUnitChanged?.Invoke(GetActiveUnit());
+        }
+
+        // Whether one side has been wiped out. Reads participatingUnits, not initiativeOrder, so
+        // the answer does not depend on combat having been started.
+        //
+        // Each side is only considered defeatable if it had members to begin with. Without that
+        // guard, "all player units are knocked out" is vacuously true on a roster with no player
+        // units at all, and a one-unit test scene would report a result the instant a turn ended.
+        // Empty side means "not a participant", not "already lost".
+        //
+        // Mutual wipeout resolves to PlayerDefeat: if the last player unit and the last enemy fall
+        // in the same exchange, that is not a win. Stated here because the order of the two checks
+        // below is the only thing that decides it, and it would be easy to swap by accident.
+        public CombatEndResult CheckCombatEndCondition()
+        {
+            bool hasPlayerUnits = false;
+            bool hasEnemyUnits = false;
+            bool anyPlayerStanding = false;
+            bool anyEnemyStanding = false;
+
+            foreach (GridUnit unit in participatingUnits)
+            {
+                if (unit == null)
+                {
+                    continue;
+                }
+
+                if (unit.IsPlayerControlled)
+                {
+                    hasPlayerUnits = true;
+                    anyPlayerStanding |= !unit.IsKnockedOut;
+                }
+                else
+                {
+                    hasEnemyUnits = true;
+                    anyEnemyStanding |= !unit.IsKnockedOut;
+                }
+            }
+
+            if (hasPlayerUnits && !anyPlayerStanding)
+            {
+                return CombatEndResult.PlayerDefeat;
+            }
+
+            if (hasEnemyUnits && !anyEnemyStanding)
+            {
+                return CombatEndResult.PlayerVictory;
+            }
+
+            return CombatEndResult.Ongoing;
         }
 
         // Sorted by Speed descending, ties broken by position in participatingUnits.
@@ -156,6 +250,70 @@ namespace Tactica.Combat
         private void EndCurrentTurnFromMenu()
         {
             EndCurrentTurn();
+        }
+
+        // TEMPORARY TEST WIRING - REMOVE with testAbility, once ability selection UI exists.
+        //
+        // Fires testAbility from the active unit at the first other unit in the roster. Enough for
+        // a 1v1 bench test; with three or more units "the other one" stops being meaningful and
+        // this needs real target selection.
+        //
+        // Deliberately does not gate on CurrentState. This is a bench probe for the resolver, and
+        // making it refuse outside WaitingForInput would hide resolver bugs behind turn-state
+        // bugs. The real action path should gate, exactly as TryMoveActiveUnitTo does.
+        [ContextMenu("Test: Execute Ability On Other Unit")]
+        public void TestExecuteAbilityOnOtherUnit()
+        {
+            if (testAbility == null)
+            {
+                Debug.LogWarning($"{nameof(CombatManager)}: no {nameof(testAbility)} assigned.", this);
+                return;
+            }
+
+            GridUnit activeUnit = GetActiveUnit();
+
+            if (activeUnit == null)
+            {
+                Debug.LogWarning(
+                    $"{nameof(CombatManager)}: no active unit. Run {nameof(StartCombat)} first.",
+                    this);
+                return;
+            }
+
+            GridUnit otherUnit = FindOtherUnit(activeUnit);
+
+            if (otherUnit == null)
+            {
+                Debug.LogWarning(
+                    $"{nameof(CombatManager)}: no second unit in {nameof(participatingUnits)} to target.",
+                    this);
+                return;
+            }
+
+            bool success = Resolver.TryExecuteAbility(activeUnit, otherUnit, testAbility, out string message);
+
+            // Logged on both paths: a rejection message is the whole point of a bench probe, and
+            // the HP/MP readout confirms a failed attempt changed nothing.
+            Debug.Log(
+                $"[{(success ? "OK" : "REJECTED")}] {message}\n" +
+                $"  {otherUnit.name}: {otherUnit.CurrentStats.HP}/{otherUnit.EffectiveStats.MaxHP} HP\n" +
+                $"  {activeUnit.name}: {activeUnit.CurrentStats.MP}/{activeUnit.EffectiveStats.MaxMP} MP",
+                this);
+        }
+
+        // First roster entry that is not the given unit. Skips nulls, so an empty Inspector slot
+        // does not become the target.
+        private GridUnit FindOtherUnit(GridUnit excluding)
+        {
+            foreach (GridUnit unit in participatingUnits)
+            {
+                if (unit != null && unit != excluding)
+                {
+                    return unit;
+                }
+            }
+
+            return null;
         }
     }
 }

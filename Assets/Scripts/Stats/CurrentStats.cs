@@ -35,7 +35,7 @@ namespace Tactica.Stats
             MP = mp;
         }
 
-        // INTENTIONAL API: unused today, needed the moment damage resolution lands.
+        // The single definition of "still standing". GridUnit.IsKnockedOut negates this.
         public bool IsAlive => HP > 0;
 
         // Spawn state: full pools from a unit's capabilities.

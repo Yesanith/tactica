@@ -15,8 +15,9 @@ namespace Tactica.Stats
         [Min(0)]
         [SerializeField] private int mpCost;
 
-        [Tooltip("Targeting reach in tiles, as orthogonal step distance - the same metric the " +
-                 "grid's move-range flood fill uses. Range 0 means self-only.")]
+        [Tooltip("Targeting reach in tiles, as 8-directional (Chebyshev) step distance - a " +
+                 "diagonal neighbour counts as 1, the same metric movement range uses. " +
+                 "Range 0 means self-only.")]
         [Min(0)]
         [SerializeField] private int range = 1;
 

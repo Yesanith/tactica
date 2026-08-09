@@ -29,6 +29,16 @@ namespace Tactica.Grid
         [FormerlySerializedAs("GridManagerRef")]
         [SerializeField] private GridManager gridManagerRef;
 
+        // PLACEHOLDER, same category as ActionResolver's "any two different units are enemies":
+        // a single bool is not a faction system. It cannot express neutrals, a third hostile army,
+        // or charmed units switching sides mid-battle. It exists so CheckCombatEndCondition has
+        // *something* to split the roster by. Replace both this and ActionResolver.IsValidTarget
+        // with a real Faction type together - they are the same missing concept seen from two
+        // angles, and fixing one without the other leaves the rules inconsistent.
+        [Tooltip("PLACEHOLDER: true for the player's side, false for enemies. Stands in for a " +
+                 "proper faction system.")]
+        [SerializeField] private bool isPlayerControlled;
+
         [Tooltip("Distance from this GameObject's pivot down to its feet. Unity's Capsule is 2 " +
                  "units tall with a centred pivot, so 1.0 fits an unscaled capsule. Use 0 for a " +
                  "model whose pivot already sits at its feet.")]
@@ -36,6 +46,13 @@ namespace Tactica.Grid
         [SerializeField] private float pivotHeight = 1.0f;
 
         public Vector2Int GridCoords => gridCoords;
+
+        public bool IsPlayerControlled => isPlayerControlled;
+
+        // Reuses CurrentStats.IsAlive rather than re-testing HP, so "what counts as down" is
+        // defined in exactly one place. If that ever grows past HP <= 0 - revival states, a
+        // separate downed-but-not-dead flag - only IsAlive changes.
+        public bool IsKnockedOut => !CurrentStats.IsAlive;
 
         // Live pools. A public field rather than a property on purpose: CurrentStats is a struct,
         // and C# forbids writing through a property of struct type (unit.CurrentStats.HP -= 5 is
@@ -118,6 +135,30 @@ namespace Tactica.Grid
             }
 
             CurrentStats = CurrentStats.ClampedTo(EffectiveStats);
+        }
+
+        // Reduces HP, floored at 0. Negative and zero amounts are ignored rather than healing -
+        // a miscalculated "damage" must never top a unit up.
+        public void ApplyDamage(int amount)
+        {
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            CurrentStats.HP = Mathf.Max(0, CurrentStats.HP - amount);
+        }
+
+        // Restores HP, capped at the current MaxHP. Reads EffectiveStats rather than storing a cap,
+        // so a buff that raises MaxHP immediately allows healing into the new headroom.
+        public void Heal(int amount)
+        {
+            if (amount <= 0)
+            {
+                return;
+            }
+
+            CurrentStats.HP = Mathf.Min(EffectiveStats.MaxHP, CurrentStats.HP + amount);
         }
 
         // Places this unit on top of the tile at GridCoords.

@@ -13,6 +13,10 @@ namespace Tactica.Stats
 
         public int Strength;
         public int Magic;
+
+        // Flat damage reduction, subtracted in ActionResolver.CalculateDamage.
+        public int Defense;
+
         public int Speed;
 
         // Tiles per turn. Read by GridManager's move-range flood fill.
@@ -23,12 +27,13 @@ namespace Tactica.Stats
         // still applies.
         public int Jump;
 
-        public CharacterStats(int maxHP, int maxMP, int strength, int magic, int speed, int move, int jump)
+        public CharacterStats(int maxHP, int maxMP, int strength, int magic, int defense, int speed, int move, int jump)
         {
             MaxHP = maxHP;
             MaxMP = maxMP;
             Strength = strength;
             Magic = magic;
+            Defense = defense;
             Speed = speed;
             Move = move;
             Jump = jump;
@@ -52,6 +57,7 @@ namespace Tactica.Stats
                 MaxMP = a.MaxMP + b.MaxMP,
                 Strength = a.Strength + b.Strength,
                 Magic = a.Magic + b.Magic,
+                Defense = a.Defense + b.Defense,
                 Speed = a.Speed + b.Speed,
                 Move = a.Move + b.Move,
                 Jump = a.Jump + b.Jump,
@@ -72,6 +78,7 @@ namespace Tactica.Stats
                 MaxMP = stats.MaxMP * multiplier,
                 Strength = stats.Strength * multiplier,
                 Magic = stats.Magic * multiplier,
+                Defense = stats.Defense * multiplier,
                 Speed = stats.Speed * multiplier,
                 Move = stats.Move * multiplier,
                 Jump = stats.Jump * multiplier,
@@ -80,7 +87,7 @@ namespace Tactica.Stats
 
         public override string ToString()
         {
-            return $"HP {MaxHP} MP {MaxMP} | STR {Strength} MAG {Magic} SPD {Speed} | Move {Move} Jump {Jump}";
+            return $"HP {MaxHP} MP {MaxMP} | STR {Strength} MAG {Magic} DEF {Defense} SPD {Speed} | Move {Move} Jump {Jump}";
         }
     }
 }

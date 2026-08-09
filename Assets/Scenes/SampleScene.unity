@@ -830,6 +830,7 @@ MonoBehaviour:
   participatingUnits:
   - {fileID: 513276132}
   - {fileID: 633874829}
+  testAbility: {fileID: 11400000, guid: a76f020b29ce16f4ca3567725fb009aa, type: 2}
 --- !u!4 &1972310230
 Transform:
   m_ObjectHideFlags: 0

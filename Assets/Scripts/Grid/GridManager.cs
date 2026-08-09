@@ -526,25 +526,88 @@ namespace Tactica.Grid
                 Mathf.RoundToInt(local.z / tileSize));
         }
 
+        // Chebyshev (chessboard) step distance: the number of 8-directional steps between two
+        // coordinates, ignoring terrain entirely. A diagonal neighbour is distance 1, exactly like
+        // an orthogonal one - max, not sum, is what makes that true.
+        //
+        // DELIBERATELY DIFFERENT FROM MOVEMENT. GetTilesInMoveRange allows only one diagonal step
+        // per path, so walking to (2,2) costs 3 there while this reports distance 2. That is not
+        // an inconsistency to reconcile - the two answer different questions:
+        //
+        //   - Movement is a path. A unit physically crosses every tile in between, so the route
+        //     has to be legal and is charged for the ground it covers. The single-diagonal limit
+        //     is what stops diagonal travel from being strictly better than orthogonal.
+        //   - Targeting is proximity. An arrow does not walk. Nothing about the intervening tiles
+        //     matters, so anything that made reach depend on a route would be wrong - see the
+        //     occupied-tile trap noted below.
+        //
+        // The practical upshot for design: a unit can shoot a tile it cannot step onto this turn.
+        // That is normal for the genre and worth keeping straight when tuning Range against Move.
+        //
+        // This is the right metric for ability range, and GetTilesInMoveRange is NOT - two
+        // reasons, the second decisive:
+        //   1. That method measures *path* distance, so a wall or a unit in the way inflates it.
+        //      Reach should not care: you can shoot over a chasm you cannot walk across.
+        //   2. It skips occupied tiles. A target is by definition standing on one, so a unit
+        //      could never appear in its own targetable set. Reusing it would silently make
+        //      every ability untargetable.
+        //
+        // Static because it is pure coordinate arithmetic with no grid state - callers do not
+        // need a GridManager instance to ask.
+        public static int GetGridDistance(Vector2Int a, Vector2Int b)
+        {
+            return Mathf.Max(Mathf.Abs(a.x - b.x), Mathf.Abs(a.y - b.y));
+        }
+
         // ---------------------------------------------------------------------
         // Movement range
         // ---------------------------------------------------------------------
 
-        // Orthogonal only - standard tactics movement, and it keeps every edge cost at 1.
-        private static readonly Vector2Int[] OrthogonalDirections =
+        // All eight neighbours. Every step costs 1 whether it is orthogonal or diagonal, which is
+        // what makes BFS below correct and what makes Chebyshev the matching distance metric.
+        //
+        // DELIBERATE SIMPLIFICATION: a diagonal step covers ~1.41 tiles of real ground, and games
+        // that care about that charge for it - either a fractional cost, or the common integer
+        // approximation of alternating 1 and 2 per diagonal. Both are rejected here on purpose.
+        // Uniform cost keeps movement trivially predictable ("Move 4 means four steps in any
+        // direction"), keeps ability range and movement range speaking the same language, and
+        // keeps the search a plain BFS.
+        //
+        // The price, should it ever bite: a unit can cross a 4x4 square diagonally in 4 steps but
+        // needs 4 to go straight across too, so diagonal travel is strictly better and optimal
+        // play drifts toward moving on diagonals. If that becomes visible in playtesting, the fix
+        // is weighted edges - which means swapping the Queue below for a priority queue, not
+        // restructuring anything else.
+        private static readonly Vector2Int[] NeighborDirections =
         {
             new Vector2Int(1, 0),
             new Vector2Int(-1, 0),
             new Vector2Int(0, 1),
             new Vector2Int(0, -1),
+            new Vector2Int(1, 1),
+            new Vector2Int(1, -1),
+            new Vector2Int(-1, 1),
+            new Vector2Int(-1, -1),
         };
 
         // Flood-fills from startCoords and returns every tile reachable in at most moveRange steps,
         // excluding startCoords. Results come back ordered by increasing distance.
         //
-        // BFS is correct here only because every step costs exactly 1, so first arrival at a tile
-        // is guaranteed to be the shortest path. Add variable terrain cost or diagonals and this
-        // needs to become Dijkstra (priority queue, revisit on a cheaper route).
+        // MOVEMENT RULE: at most ONE diagonal step per path, as if a unit may cut a single corner
+        // and must walk the rest. So the open-ground cost of a move is:
+        //     dx + dy - 1   when both dx and dy are non-zero (the one diagonal saves a step)
+        //     dx + dy       otherwise
+        // A diagonal neighbour costs 1; one diagonal plus orthogonals costs 1 + the rest; a tile
+        // two diagonals away costs the orthogonal price (3 for (2,2), not 2).
+        //
+        // This deliberately differs from GetGridDistance, which stays pure Chebyshev - see the
+        // cross-reference there. Movement is a path and pays for the ground it covers; targeting
+        // is proximity and does not.
+        //
+        // BFS is still correct because every step costs exactly 1. The search now runs over
+        // (tile, diagonal-still-available) states rather than bare tiles, which keeps the cost
+        // uniform - the diagonal limit is expressed as which edges exist, not as a price. Variable
+        // cost is what would force Dijkstra; this is not that.
         //
         // maxStepHeightOverride replaces the grid-wide maxStepHeight for one query - pass a unit's
         // EffectiveStats.Jump to give it its own climbing ability.
@@ -567,16 +630,39 @@ namespace Tactica.Grid
 
             int stepLimit = maxStepHeightOverride ?? maxStepHeight;
 
-            // Seeding visited with the start tile also implements "occupied tiles block, unless
-            // it's the start" - the moving unit occupies the start, which is never re-tested.
-            HashSet<Vector2Int> visited = new HashSet<Vector2Int> { startCoords };
+            // Visited is now split by whether the path still has its diagonal in hand, because a
+            // tile reached with the diagonal unspent is genuinely more useful than the same tile
+            // reached with it spent - it can still cut a corner later. Collapsing both into one
+            // set would let an early diagonal-spending path claim a tile and lock out a
+            // same-length orthogonal path that arrives with the diagonal intact, wrongly shrinking
+            // everything downstream.
+            //
+            // The two-set form encodes the dominance rule directly:
+            //   - reaching a tile with the diagonal AVAILABLE dominates every state of that tile,
+            //     so a later candidate of either kind is discarded;
+            //   - reaching it with the diagonal SPENT only blocks later spent candidates; an
+            //     available one is still worth exploring and gets its own entry.
+            // BFS expands in nondecreasing distance, so anything already recorded arrived at a
+            // distance no greater than the candidate's - which is what makes "already present"
+            // sufficient to mean "dominated", with no distance comparison needed.
+            //
+            // As before, entries are added only on acceptance, never on rejection, so a tile
+            // refused for height from one direction stays eligible from another.
+            HashSet<Vector2Int> visitedWithDiagonalAvailable = new HashSet<Vector2Int> { startCoords };
+            HashSet<Vector2Int> visitedWithDiagonalSpent = new HashSet<Vector2Int>();
 
-            Queue<(Vector2Int Coords, int Distance)> frontier = new Queue<(Vector2Int, int)>();
-            frontier.Enqueue((startCoords, 0));
+            // Output de-duplication. A tile can legitimately be accepted twice (once per state);
+            // it should still be listed once, at the first and therefore shortest arrival.
+            HashSet<Vector2Int> listed = new HashSet<Vector2Int> { startCoords };
+
+            Queue<(Vector2Int Coords, int Distance, bool UsedDiagonal)> frontier =
+                new Queue<(Vector2Int, int, bool)>();
+
+            frontier.Enqueue((startCoords, 0, false));
 
             while (frontier.Count > 0)
             {
-                (Vector2Int currentCoords, int distance) = frontier.Dequeue();
+                (Vector2Int currentCoords, int distance, bool usedDiagonal) = frontier.Dequeue();
 
                 if (distance >= moveRange)
                 {
@@ -585,11 +671,26 @@ namespace Tactica.Grid
 
                 GridTile currentTile = GridTiles[currentCoords];
 
-                foreach (Vector2Int direction in OrthogonalDirections)
+                foreach (Vector2Int direction in NeighborDirections)
                 {
+                    bool isDiagonalStep = direction.x != 0 && direction.y != 0;
+
+                    // The whole rule, in one line: a diagonal edge only exists for a path that has
+                    // not spent one yet.
+                    if (isDiagonalStep && usedDiagonal)
+                    {
+                        continue;
+                    }
+
+                    bool nextUsedDiagonal = usedDiagonal || isDiagonalStep;
                     Vector2Int neighbourCoords = currentCoords + direction;
 
-                    if (visited.Contains(neighbourCoords))
+                    if (visitedWithDiagonalAvailable.Contains(neighbourCoords))
+                    {
+                        continue;
+                    }
+
+                    if (nextUsedDiagonal && visitedWithDiagonalSpent.Contains(neighbourCoords))
                     {
                         continue;
                     }
@@ -619,9 +720,21 @@ namespace Tactica.Grid
                         continue;
                     }
 
-                    visited.Add(neighbourCoords);
-                    reachable.Add(neighbourCoords);
-                    frontier.Enqueue((neighbourCoords, distance + 1));
+                    if (nextUsedDiagonal)
+                    {
+                        visitedWithDiagonalSpent.Add(neighbourCoords);
+                    }
+                    else
+                    {
+                        visitedWithDiagonalAvailable.Add(neighbourCoords);
+                    }
+
+                    if (listed.Add(neighbourCoords))
+                    {
+                        reachable.Add(neighbourCoords);
+                    }
+
+                    frontier.Enqueue((neighbourCoords, distance + 1, nextUsedDiagonal));
                 }
             }
 

@@ -18,15 +18,17 @@ MonoBehaviour:
     MaxMP: 1
     Strength: 1
     Magic: 1
+    Defense: 1
     Speed: 9
     Move: 1
     Jump: 1
   statGrowthPerLevel:
-    MaxHP: 0
-    MaxMP: 0
-    Strength: 0
-    Magic: 0
-    Speed: 0
+    MaxHP: 1
+    MaxMP: 1
+    Strength: 1
+    Magic: 1
+    Defense: 1
+    Speed: 1
     Move: 0
     Jump: 0
   abilityUnlocks: []

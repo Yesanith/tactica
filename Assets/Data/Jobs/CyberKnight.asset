@@ -18,6 +18,7 @@ MonoBehaviour:
     MaxMP: 10
     Strength: 8
     Magic: 5
+    Defense: 4
     Speed: 6
     Move: 2
     Jump: 1
@@ -26,6 +27,7 @@ MonoBehaviour:
     MaxMP: 1
     Strength: 2
     Magic: 1
+    Defense: 1
     Speed: 1
     Move: 0
     Jump: 0

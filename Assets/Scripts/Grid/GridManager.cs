@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
+using Tactica.Combat;
 
 namespace Tactica.Grid
 {
@@ -41,11 +42,13 @@ namespace Tactica.Grid
 
         [Tooltip("World units added per Height level. Separate from TileSize so elevation steps " +
                  "can be shallower or steeper than a tile is wide.")]
-        [SerializeField] private float HeightStep = 1.0f;
+        [FormerlySerializedAs("HeightStep")]
+        [SerializeField] private float heightStep = 1.0f;
 
         [Header("Rendering")]
         [Tooltip("Cube prefab instantiated once per tile. Leave empty to keep the grid data-only.")]
-        [SerializeField] private GameObject TilePrefab;
+        [FormerlySerializedAs("TilePrefab")]
+        [SerializeField] private GameObject tilePrefab;
 
         // Lowercase so the public property below can take the PascalCase name. FormerlySerializedAs
         // keeps the Inspector value across the rename (Unity serialises by field name).
@@ -61,23 +64,38 @@ namespace Tactica.Grid
 
         [Header("Highlighting")]
         [Tooltip("Default material applied to a tile with no highlight layers set.")]
-        [SerializeField] private Material BaseMaterial;
+        [FormerlySerializedAs("BaseMaterial")]
+        [SerializeField] private Material baseMaterial;
 
-        [Tooltip("Hover colour. Takes priority over RangeMaterial when both apply.")]
-        [SerializeField] private Material HighlightMaterial;
+        [Tooltip("Hover colour. Takes priority over rangeMaterial when both apply.")]
+        [FormerlySerializedAs("HighlightMaterial")]
+        [SerializeField] private Material highlightMaterial;
 
         [Tooltip("Move-range colour.")]
-        [SerializeField] private Material RangeMaterial;
+        [FormerlySerializedAs("RangeMaterial")]
+        [SerializeField] private Material rangeMaterial;
 
         [Header("Movement")]
         // Placeholder for tuning: will likely become per-unit, with separate up/down limits.
         [Tooltip("Maximum absolute height difference a unit may traverse in one step.")]
-        [SerializeField] private int MaxStepHeight = 1;
+        [FormerlySerializedAs("MaxStepHeight")]
+        [SerializeField] private int maxStepHeight = 1;
 
-        // TEMPORARY TEST WIRING - REMOVE once unit-selection input calls ShowMoveRangeForUnit.
+        [Header("Combat")]
+        [Tooltip("Source of the current turn owner. If unset, click-to-move falls back to " +
+                 "testUnit and turn order is not enforced.")]
+        [FormerlySerializedAs("CombatManagerRef")]
+        [SerializeField] private CombatManager combatManagerRef;
+
+        // TEMPORARY TEST WIRING - REMOVE once combat is always present in a scene.
         [Header("Debug (temporary)")]
-        [Tooltip("TEMPORARY: if assigned, this unit's move range is highlighted on Start.")]
-        [SerializeField] private GridUnit TestUnit;
+        [Tooltip("TEMPORARY fallback for testing without a CombatManager. Its range is shown on " +
+                 "Start, and it receives clicks when combatManagerRef is unset.")]
+        [FormerlySerializedAs("TestUnit")]
+        [SerializeField] private GridUnit testUnit;
+
+        // Keeps the fallback warning to one message instead of one per click.
+        private bool warnedAboutMissingCombatManager;
 
         // Must exist in Project Settings > Tags and Layers. Layers cannot be created from a
         // script, only read by name - so this resolves to -1 if someone deletes it.
@@ -85,27 +103,27 @@ namespace Tactica.Grid
 
         // Cached: NameToLayer is a string lookup, and this keeps the missing-layer warning to one
         // message instead of one per tile.
-        private int? CachedTileLayer;
+        private int? cachedTileLayer;
 
         // Spawned visuals, keyed like GridTiles. Kept parallel to the data rather than as a field
         // on GridTile, so the data layer holds no scene references.
-        private readonly Dictionary<Vector2Int, GameObject> SpawnedTiles = new Dictionary<Vector2Int, GameObject>();
+        private readonly Dictionary<Vector2Int, GameObject> spawnedTiles = new Dictionary<Vector2Int, GameObject>();
 
         // Reverse lookup for raycast hits, which hand back a GameObject. Dictionary has no
-        // value->key search, and scanning SpawnedTiles every frame would be O(n).
-        // Written and cleared together with SpawnedTiles.
-        private readonly Dictionary<GameObject, Vector2Int> ObjectToCoords = new Dictionary<GameObject, Vector2Int>();
+        // value->key search, and scanning spawnedTiles every frame would be O(n).
+        // Written and cleared together with spawnedTiles.
+        private readonly Dictionary<GameObject, Vector2Int> objectToCoords = new Dictionary<GameObject, Vector2Int>();
 
         // Which highlight layers each tile currently carries. Absent key means None.
-        private readonly Dictionary<Vector2Int, TileHighlightState> HighlightStates = new Dictionary<Vector2Int, TileHighlightState>();
+        private readonly Dictionary<Vector2Int, TileHighlightState> highlightStates = new Dictionary<Vector2Int, TileHighlightState>();
 
         // Nullable because Vector2Int is a struct with no spare sentinel value - (0,0) and (-1,-1)
         // are both valid coordinates.
-        private Vector2Int? HighlightedCoords;
+        private Vector2Int? highlightedCoords;
 
         // Exactly the tiles lit by the last ShowMoveRangeForUnit call. Recorded rather than
         // recomputed at clear time, since the grid may have changed in between.
-        private readonly List<Vector2Int> MoveRangeHighlights = new List<Vector2Int>();
+        private readonly List<Vector2Int> moveRangeHighlights = new List<Vector2Int>();
 
         // Awake -> data, Start -> visuals. Every Awake runs before any Start, so other scripts can
         // reshape the grid in their Awake and the visuals will reflect it.
@@ -114,15 +132,63 @@ namespace Tactica.Grid
             GenerateGrid();
         }
 
+        // OnEnable/OnDisable rather than Awake/OnDestroy: symmetric, so toggling this component off
+        // and on re-subscribes exactly once, and OnDisable runs on the way to destruction anyway.
+        // Subscribing in Awake and never unsubscribing would keep this object alive through the
+        // event's delegate list after a scene change - the usual C# event leak in Unity.
+        private void OnEnable()
+        {
+            if (combatManagerRef != null)
+            {
+                combatManagerRef.OnActiveUnitChanged += HandleActiveUnitChanged;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (combatManagerRef != null)
+            {
+                combatManagerRef.OnActiveUnitChanged -= HandleActiveUnitChanged;
+            }
+        }
+
         private void Start()
         {
             RenderGrid();
 
-            // TEMPORARY TEST WIRING - REMOVE with the TestUnit field.
-            if (TestUnit != null)
+            // Only when nothing else drives the display. With a CombatManager present,
+            // OnActiveUnitChanged owns the highlight, and showing testUnit here would leave a
+            // stale range on screen until the first turn change.
+            //
+            // Known limitation, confined to this branch: GridUnit claims its tile via SetOccupant
+            // in its own Start, and two Starts have no defined order - so this range may be
+            // computed before some units have marked their tiles occupied. Harmless with a single
+            // unit (a unit's own tile is excluded from its range regardless); with several it can
+            // briefly show a tile that is actually taken.
+            //
+            // The combat path does NOT have this problem: StartCombat is invoked manually, long
+            // after every Start has run. So this dies entirely along with testUnit - there is
+            // nothing to fix here, only something to delete.
+            //
+            // TEMPORARY - REMOVE with the testUnit field.
+            if (combatManagerRef == null && testUnit != null)
             {
-                ShowMoveRangeForUnit(TestUnit);
+                ShowMoveRangeForUnit(testUnit);
             }
+        }
+
+        // Turn passed to someone else: retire the old range and draw the new one.
+        // ShowMoveRangeForUnit already clears first, so the explicit clear is only needed for the
+        // null case (combat failed to start, or ended).
+        private void HandleActiveUnitChanged(GridUnit unit)
+        {
+            if (unit == null)
+            {
+                ClearMoveRangeHighlight();
+                return;
+            }
+
+            ShowMoveRangeForUnit(unit);
         }
 
         // Builds a flat, fully walkable grid from (0,0) to (GridWidth-1, GridDepth-1).
@@ -146,15 +212,15 @@ namespace Tactica.Grid
         // Rendering
         // ---------------------------------------------------------------------
 
-        // Spawns one TilePrefab per tile, clearing any previous set first.
+        // Spawns one tilePrefab per tile, clearing any previous set first.
         // One GameObject per tile is fine at this scale and gives raycast picking for free.
         // Graphics.RenderMeshInstanced would be the move at ~10,000 tiles; the swap is local here.
         [ContextMenu("Render Grid")]
         public void RenderGrid()
         {
-            if (TilePrefab == null)
+            if (tilePrefab == null)
             {
-                Debug.LogWarning($"{nameof(GridManager)}: no {nameof(TilePrefab)} assigned, nothing to render.", this);
+                Debug.LogWarning($"{nameof(GridManager)}: no {nameof(tilePrefab)} assigned, nothing to render.", this);
                 return;
             }
 
@@ -163,10 +229,10 @@ namespace Tactica.Grid
             // Load-bearing for hover detection: Physics.Raycast only sees colliders. Unity's Cube
             // primitive has a BoxCollider already; a prefab without one renders fine and is
             // silently un-hoverable.
-            if (TilePrefab.GetComponentInChildren<Collider>() == null)
+            if (tilePrefab.GetComponentInChildren<Collider>() == null)
             {
                 Debug.LogWarning(
-                    $"{nameof(GridManager)}: {nameof(TilePrefab)} '{TilePrefab.name}' has no Collider. " +
+                    $"{nameof(GridManager)}: {nameof(tilePrefab)} '{tilePrefab.name}' has no Collider. " +
                     "Tiles will render but cursor hover detection will not work. Add a BoxCollider to the prefab.",
                     this);
             }
@@ -176,7 +242,7 @@ namespace Tactica.Grid
                 Vector2Int coords = entry.Key;
 
                 // Parenting via the Instantiate argument avoids a redundant transform recalculation.
-                GameObject tileObject = Instantiate(TilePrefab, GridToWorldPosition(coords), Quaternion.identity, transform);
+                GameObject tileObject = Instantiate(tilePrefab, GridToWorldPosition(coords), Quaternion.identity, transform);
 
                 tileObject.name = $"Tile_{coords.x}_{coords.y}";
 
@@ -188,14 +254,14 @@ namespace Tactica.Grid
                 }
 
                 // Default cube is 1x1x1, so localScale is effectively size in metres. Y is squashed
-                // flat; elevation already came through in GridToWorldPosition via HeightStep.
+                // flat; elevation already came through in GridToWorldPosition via heightStep.
                 tileObject.transform.localScale = new Vector3(tileSize, tileVisualHeight, tileSize);
 
-                SpawnedTiles[coords] = tileObject;
-                ObjectToCoords[tileObject] = coords;
+                spawnedTiles[coords] = tileObject;
+                objectToCoords[tileObject] = coords;
 
                 // Registered first so the visual resolver can find the object. State is None here
-                // (ClearRenderedTiles wiped it), so this applies BaseMaterial.
+                // (ClearRenderedTiles wiped it), so this applies baseMaterial.
                 ApplyHighlightVisual(coords);
             }
         }
@@ -203,7 +269,7 @@ namespace Tactica.Grid
         [ContextMenu("Clear Rendered Tiles")]
         public void ClearRenderedTiles()
         {
-            foreach (GameObject tileObject in SpawnedTiles.Values)
+            foreach (GameObject tileObject in spawnedTiles.Values)
             {
                 // Unity fake-null: an externally destroyed object leaves a non-null C# reference
                 // that only == null catches.
@@ -224,13 +290,13 @@ namespace Tactica.Grid
                 }
             }
 
-            SpawnedTiles.Clear();
-            ObjectToCoords.Clear();
+            spawnedTiles.Clear();
+            objectToCoords.Clear();
 
             // All highlight bookkeeping names objects that no longer exist.
-            HighlightStates.Clear();
-            HighlightedCoords = null;
-            MoveRangeHighlights.Clear();
+            highlightStates.Clear();
+            highlightedCoords = null;
+            moveRangeHighlights.Clear();
         }
 
         // Index of the "Tiles" layer, or -1 if it does not exist in the project.
@@ -238,11 +304,11 @@ namespace Tactica.Grid
         {
             get
             {
-                if (!CachedTileLayer.HasValue)
+                if (!cachedTileLayer.HasValue)
                 {
-                    CachedTileLayer = LayerMask.NameToLayer(TileLayerName);
+                    cachedTileLayer = LayerMask.NameToLayer(TileLayerName);
 
-                    if (CachedTileLayer.Value < 0)
+                    if (cachedTileLayer.Value < 0)
                     {
                         Debug.LogWarning(
                             $"{nameof(GridManager)}: layer '{TileLayerName}' does not exist. Add it in " +
@@ -252,7 +318,7 @@ namespace Tactica.Grid
                     }
                 }
 
-                return CachedTileLayer.Value;
+                return cachedTileLayer.Value;
             }
         }
 
@@ -269,9 +335,10 @@ namespace Tactica.Grid
         }
 
         // The spawned cube for a coordinate, or null if it has no visual.
+        // INTENTIONAL API: unused today, for selection outlines and per-tile VFX attachment.
         public GameObject GetTileObject(Vector2Int coords)
         {
-            return SpawnedTiles.TryGetValue(coords, out GameObject tileObject) ? tileObject : null;
+            return spawnedTiles.TryGetValue(coords, out GameObject tileObject) ? tileObject : null;
         }
 
         // ---------------------------------------------------------------------
@@ -304,7 +371,7 @@ namespace Tactica.Grid
 
             GameObject hitObject = hit.collider.gameObject;
 
-            if (ObjectToCoords.TryGetValue(hitObject, out coords))
+            if (objectToCoords.TryGetValue(hitObject, out coords))
             {
                 return true;
             }
@@ -313,7 +380,7 @@ namespace Tactica.Grid
             Transform root = hitObject.transform.parent;
             while (root != null)
             {
-                if (ObjectToCoords.TryGetValue(root.gameObject, out coords))
+                if (objectToCoords.TryGetValue(root.gameObject, out coords))
                 {
                     return true;
                 }
@@ -326,7 +393,7 @@ namespace Tactica.Grid
 
         public TileHighlightState GetTileHighlightState(Vector2Int coords)
         {
-            return HighlightStates.TryGetValue(coords, out TileHighlightState state) ? state : TileHighlightState.None;
+            return highlightStates.TryGetValue(coords, out TileHighlightState state) ? state : TileHighlightState.None;
         }
 
         // Sets or clears one layer, leaving the others untouched. This is what stops hover and
@@ -343,11 +410,11 @@ namespace Tactica.Grid
 
             if (updated == TileHighlightState.None)
             {
-                HighlightStates.Remove(coords);
+                highlightStates.Remove(coords);
             }
             else
             {
-                HighlightStates[coords] = updated;
+                highlightStates[coords] = updated;
             }
 
             ApplyHighlightVisual(coords);
@@ -357,22 +424,22 @@ namespace Tactica.Grid
         // in whoever wrote last, so the order the two systems run in stops mattering.
         private void ApplyHighlightVisual(Vector2Int coords)
         {
-            if (!SpawnedTiles.TryGetValue(coords, out GameObject tileObject) || tileObject == null)
+            if (!spawnedTiles.TryGetValue(coords, out GameObject tileObject) || tileObject == null)
             {
                 return;
             }
 
             TileHighlightState state = GetTileHighlightState(coords);
-            Material material = BaseMaterial;
+            Material material = baseMaterial;
 
             // Bitwise rather than HasFlag - clearer intent for flags, and no boxing.
-            if ((state & TileHighlightState.Hovered) != 0 && HighlightMaterial != null)
+            if ((state & TileHighlightState.Hovered) != 0 && highlightMaterial != null)
             {
-                material = HighlightMaterial;
+                material = highlightMaterial;
             }
-            else if ((state & TileHighlightState.InMoveRange) != 0 && RangeMaterial != null)
+            else if ((state & TileHighlightState.InMoveRange) != 0 && rangeMaterial != null)
             {
-                material = RangeMaterial;
+                material = rangeMaterial;
             }
 
             if (material != null)
@@ -381,24 +448,24 @@ namespace Tactica.Grid
             }
         }
 
-        // Call once per frame. Moves the hover highlight to the tile under the cursor.
-        public void UpdateCursorHighlight(Camera cam)
+        // Moves the hover highlight to the given tile, or clears it when null.
+        //
+        // Takes an already-resolved coordinate rather than a Camera so the caller can raycast once
+        // per frame and feed the result to every consumer. Previously this raycast internally,
+        // which meant hover, click handling and hover logging each fired their own.
+        public void SetHoveredTile(Vector2Int? currentCoords)
         {
-            Vector2Int? currentCoords = GetTileUnderCursor(cam, out Vector2Int hitCoords)
-                ? hitCoords
-                : (Vector2Int?)null;
-
             // Nullable == covers moved-between / moved-on / moved-off / didn't-move in one test,
             // and stops us reassigning materials every frame the cursor sits still.
-            if (currentCoords == HighlightedCoords)
+            if (currentCoords == highlightedCoords)
             {
                 return;
             }
 
             // Only the Hovered layer is touched; a tile's InMoveRange bit survives untouched.
-            if (HighlightedCoords.HasValue)
+            if (highlightedCoords.HasValue)
             {
-                SetTileHighlight(HighlightedCoords.Value, TileHighlightState.Hovered, false);
+                SetTileHighlight(highlightedCoords.Value, TileHighlightState.Hovered, false);
             }
 
             if (currentCoords.HasValue)
@@ -406,15 +473,15 @@ namespace Tactica.Grid
                 SetTileHighlight(currentCoords.Value, TileHighlightState.Hovered, true);
             }
 
-            HighlightedCoords = currentCoords;
+            highlightedCoords = currentCoords;
         }
 
         public void ClearCursorHighlight()
         {
-            if (HighlightedCoords.HasValue)
+            if (highlightedCoords.HasValue)
             {
-                SetTileHighlight(HighlightedCoords.Value, TileHighlightState.Hovered, false);
-                HighlightedCoords = null;
+                SetTileHighlight(highlightedCoords.Value, TileHighlightState.Hovered, false);
+                highlightedCoords = null;
             }
         }
 
@@ -440,12 +507,14 @@ namespace Tactica.Grid
 
             return new Vector3(
                 gridCoords.x * tileSize,
-                height * HeightStep,
+                height * heightStep,
                 gridCoords.y * tileSize) + transform.position;
         }
 
         // Y is ignored; elevation is tile data, not something recovered from a world position.
         // The result is not guaranteed to exist - check HasTile.
+        // INTENTIONAL API: unused today. The picking path if tiles ever move to
+        // Graphics.RenderMeshInstanced and lose their colliders - raycast a plane, convert here.
         public Vector2Int WorldToGridPosition(Vector3 worldPos)
         {
             Vector3 local = worldPos - transform.position;
@@ -476,7 +545,18 @@ namespace Tactica.Grid
         // BFS is correct here only because every step costs exactly 1, so first arrival at a tile
         // is guaranteed to be the shortest path. Add variable terrain cost or diagonals and this
         // needs to become Dijkstra (priority queue, revisit on a cheaper route).
-        public List<Vector2Int> GetTilesInMoveRange(Vector2Int startCoords, int moveRange)
+        //
+        // maxStepHeightOverride replaces the grid-wide maxStepHeight for one query - pass a unit's
+        // EffectiveStats.Jump to give it its own climbing ability.
+        //
+        // DELIBERATE HALF-STEP: the parameter exists but nothing passes it yet. Wiring Jump
+        // through now would change every unit's reachable set at once with only one unit in the
+        // scene to check it against, so a regression would look identical to correct behaviour.
+        // Connect it when there is a second unit with a different Jump to compare.
+        //
+        // Nullable rather than "= maxStepHeight" because C# optional-parameter defaults must be
+        // compile-time constants, and a serialised field is not one.
+        public List<Vector2Int> GetTilesInMoveRange(Vector2Int startCoords, int moveRange, int? maxStepHeightOverride = null)
         {
             List<Vector2Int> reachable = new List<Vector2Int>();
 
@@ -484,6 +564,8 @@ namespace Tactica.Grid
             {
                 return reachable;
             }
+
+            int stepLimit = maxStepHeightOverride ?? maxStepHeight;
 
             // Seeding visited with the start tile also implements "occupied tiles block, unless
             // it's the start" - the moving unit occupies the start, which is never re-tested.
@@ -532,7 +614,7 @@ namespace Tactica.Grid
                     // Depends on where we step *from*, unlike the checks above. This is why
                     // rejected tiles must NOT be marked visited: a tile behind a cliff on this
                     // side may still be reachable via a gentler slope elsewhere.
-                    if (Mathf.Abs(neighbourTile.Height - currentTile.Height) > MaxStepHeight)
+                    if (Mathf.Abs(neighbourTile.Height - currentTile.Height) > stepLimit)
                     {
                         continue;
                     }
@@ -558,28 +640,28 @@ namespace Tactica.Grid
 
             ClearMoveRangeHighlight();
 
-            List<Vector2Int> tilesInRange = GetTilesInMoveRange(unit.GridCoords, unit.MoveRange);
+            List<Vector2Int> tilesInRange = GetTilesInMoveRange(unit.GridCoords, unit.EffectiveStats.Move);
 
             foreach (Vector2Int coords in tilesInRange)
             {
                 SetTileHighlight(coords, TileHighlightState.InMoveRange, true);
-                MoveRangeHighlights.Add(coords);
+                moveRangeHighlights.Add(coords);
             }
         }
 
         public void ClearMoveRangeHighlight()
         {
-            foreach (Vector2Int coords in MoveRangeHighlights)
+            foreach (Vector2Int coords in moveRangeHighlights)
             {
                 SetTileHighlight(coords, TileHighlightState.InMoveRange, false);
             }
 
-            MoveRangeHighlights.Clear();
+            moveRangeHighlights.Clear();
         }
 
         // Moves the unit if targetCoords is within its current move range. No side effects if not.
         //
-        // Recomputes the range rather than trusting MoveRangeHighlights: that list is a record of
+        // Recomputes the range rather than trusting moveRangeHighlights: that list is a record of
         // what is *displayed*, and the grid may have changed since it was drawn (another unit
         // moved, a tile became unwalkable), which would let an illegal move through. Recomputing
         // is O(tiles in range) per click - free at this scale. Cache it only if a profiler says so,
@@ -591,7 +673,7 @@ namespace Tactica.Grid
                 return false;
             }
 
-            List<Vector2Int> tilesInRange = GetTilesInMoveRange(unit.GridCoords, unit.MoveRange);
+            List<Vector2Int> tilesInRange = GetTilesInMoveRange(unit.GridCoords, unit.EffectiveStats.Move);
 
             if (!tilesInRange.Contains(targetCoords))
             {
@@ -608,26 +690,88 @@ namespace Tactica.Grid
             return true;
         }
 
-        // TEMPORARY TEST WIRING - REMOVE with the TestUnit field.
-        // Stands in for a real "select unit -> see range -> click to move" flow. Re-shows the
-        // range from the new position so the display stays live between clicks.
-        public bool TryMoveTestUnitTo(Vector2Int targetCoords)
+        // Moves whoever currently holds the turn onto targetCoords. Entry point for click input.
+        //
+        // Deliberately does not end the turn. Moving and ending a turn are separate player
+        // actions - move then attack, or move then wait - so state stays WaitingForInput and the
+        // player decides when the turn is over.
+        public bool TryMoveActiveUnitTo(Vector2Int targetCoords)
         {
-            if (TestUnit == null || !TryMoveUnitToTile(TestUnit, targetCoords))
+            if (!TryGetActiveUnit(out GridUnit unit))
             {
                 return false;
             }
 
-            ShowMoveRangeForUnit(TestUnit);
+            // Gate on turn state, but only when there is a combat to ask. Anything other than
+            // WaitingForInput means an action is already playing out or the encounter is over,
+            // and a click landing then would queue a second action mid-resolution.
+            if (combatManagerRef != null && combatManagerRef.CurrentState != CombatState.WaitingForInput)
+            {
+                Debug.Log(
+                    $"{nameof(GridManager)}: move rejected - combat state is " +
+                    $"{combatManagerRef.CurrentState}, expected {CombatState.WaitingForInput}.",
+                    this);
+
+                return false;
+            }
+
+            if (!TryMoveUnitToTile(unit, targetCoords))
+            {
+                return false;
+            }
+
+            // Redraw from the new position. NOTE: nothing tracks "already moved this turn" yet,
+            // so leaving the range up means a unit can keep moving until the turn is ended. That
+            // rule belongs with action economy, not here.
+            ShowMoveRangeForUnit(unit);
             return true;
+        }
+
+        // The unit clicks should act on: the turn owner when combat is running, testUnit when it
+        // is not. Returns false when neither is available.
+        private bool TryGetActiveUnit(out GridUnit unit)
+        {
+            if (combatManagerRef != null)
+            {
+                unit = combatManagerRef.GetActiveUnit();
+
+                if (unit == null)
+                {
+                    Debug.Log(
+                        $"{nameof(GridManager)}: move rejected - combat has no active unit. " +
+                        $"Has {nameof(CombatManager.StartCombat)} been called?",
+                        this);
+
+                    return false;
+                }
+
+                return true;
+            }
+
+            // FALLBACK - remove alongside testUnit. Keeps click-to-move testable in scenes that
+            // have no CombatManager yet, at the cost of enforcing no turn order at all.
+            if (!warnedAboutMissingCombatManager)
+            {
+                warnedAboutMissingCombatManager = true;
+
+                Debug.LogWarning(
+                    $"{nameof(GridManager)}: no {nameof(combatManagerRef)} assigned, falling back to " +
+                    $"{nameof(testUnit)}. Turn order and combat state are not enforced.",
+                    this);
+            }
+
+            unit = testUnit;
+            return unit != null;
         }
 
         // ---------------------------------------------------------------------
         // Convenience accessors. These hide the struct-copy write-back described in GridTile.
         // ---------------------------------------------------------------------
 
+        // INTENTIONAL API: unused today, for validating coordinates from UI and map editing.
         public bool HasTile(Vector2Int coords) => GridTiles.ContainsKey(coords);
 
+        // INTENTIONAL API: unused today, the read path for ability targeting and AI queries.
         public bool TryGetTile(Vector2Int coords, out GridTile tile) => GridTiles.TryGetValue(coords, out tile);
 
         // These setters return false if no tile exists at the given coordinates.
@@ -644,6 +788,7 @@ namespace Tactica.Grid
             return true;
         }
 
+        // INTENTIONAL API: unused today, for terrain authoring and destructible/raising tiles.
         public bool SetHeight(Vector2Int coords, int height)
         {
             if (!GridTiles.TryGetValue(coords, out GridTile tile))
@@ -656,6 +801,7 @@ namespace Tactica.Grid
             return true;
         }
 
+        // INTENTIONAL API: unused today, for collapsing bridges and map-editing tools.
         public bool SetWalkable(Vector2Int coords, bool isWalkable)
         {
             if (!GridTiles.TryGetValue(coords, out GridTile tile))

@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 using Tactica.Grid;
 
 namespace Tactica.Camera
@@ -12,45 +13,56 @@ namespace Tactica.Camera
     {
         [Header("Pan")]
         [Tooltip("World units per second.")]
-        [SerializeField] private float PanSpeed = 12f;
+        [FormerlySerializedAs("PanSpeed")]
+        [SerializeField] private float panSpeed = 12f;
 
         [Header("Zoom")]
         [Tooltip("Distance change per scroll notch.")]
-        [SerializeField] private float ZoomSpeed = 3f;
-        [SerializeField] private float MinZoomDistance = 5f;
-        [SerializeField] private float MaxZoomDistance = 40f;
+        [FormerlySerializedAs("ZoomSpeed")]
+        [SerializeField] private float zoomSpeed = 3f;
+        [FormerlySerializedAs("MinZoomDistance")]
+        [SerializeField] private float minZoomDistance = 5f;
+        [FormerlySerializedAs("MaxZoomDistance")]
+        [SerializeField] private float maxZoomDistance = 40f;
 
         [Header("Rotate")]
         [Tooltip("Seconds for one 90-degree snap. Q rotates counterclockwise, E clockwise.")]
-        [SerializeField] private float SnapRotationDuration = 0.25f;
+        [FormerlySerializedAs("SnapRotationDuration")]
+        [SerializeField] private float snapRotationDuration = 0.25f;
 
         [Header("Auto Framing")]
         [Tooltip("Grid to frame on start. Leave empty to fall back to the manual values below.")]
-        [SerializeField] private GridManager GridManagerRef;
+        [FormerlySerializedAs("GridManagerRef")]
+        [SerializeField] private GridManager gridManagerRef;
 
         [Tooltip("Camera distance as a multiple of the grid's longest side. Higher pulls back " +
                  "and leaves more margin around the board.")]
-        [SerializeField] private float FramingPadding = 1.6f;
+        [FormerlySerializedAs("FramingPadding")]
+        [SerializeField] private float framingPadding = 1.6f;
 
         [Header("Initial Framing (fallback)")]
-        [Tooltip("Used only when GridManagerRef is unset.")]
-        [SerializeField] private Vector3 InitialFocusPoint = Vector3.zero;
+        [Tooltip("Used only when gridManagerRef is unset.")]
+        [FormerlySerializedAs("InitialFocusPoint")]
+        [SerializeField] private Vector3 initialFocusPoint = Vector3.zero;
 
-        [Tooltip("Used only when GridManagerRef is unset.")]
-        [SerializeField] private float InitialDistance = 20f;
+        [Tooltip("Used only when gridManagerRef is unset.")]
+        [FormerlySerializedAs("InitialDistance")]
+        [SerializeField] private float initialDistance = 20f;
 
         [Tooltip("Downward tilt in degrees. 45-50 is the usual tactics-game read.")]
         [Range(10f, 85f)]
-        [SerializeField] private float InitialPitch = 48f;
+        [FormerlySerializedAs("InitialPitch")]
+        [SerializeField] private float initialPitch = 48f;
 
         [Tooltip("Compass rotation in degrees. 45 puts the grid on a diagonal, isometric-style.")]
-        [SerializeField] private float InitialYaw = 45f;
+        [FormerlySerializedAs("InitialYaw")]
+        [SerializeField] private float initialYaw = 45f;
 
         // The point being orbited and panned around. Everything else is polar coordinates about it.
-        private Vector3 PivotPoint;
-        private float Yaw;
-        private float Pitch;
-        private float Distance;
+        private Vector3 pivotPoint;
+        private float yaw;
+        private float pitch;
+        private float distance;
 
         // In-progress snap. Interpolated in Update rather than in a coroutine: Update already runs
         // every frame for pan and zoom and ends with a single ApplyTransform, so keeping the
@@ -58,10 +70,10 @@ namespace Tactica.Camera
         // after Update, so it would either need its own ApplyTransform call or leave the camera a
         // frame stale - plus StopCoroutine bookkeeping on disable and re-entry. Explicit state is
         // also trivially inspectable, which a yield-machine is not.
-        private bool IsSnapping;
-        private float SnapStartYaw;
-        private float SnapTargetYaw;
-        private float SnapElapsed;
+        private bool isSnapping;
+        private float snapStartYaw;
+        private float snapTargetYaw;
+        private float snapElapsed;
 
         private void Awake()
         {
@@ -84,42 +96,42 @@ namespace Tactica.Camera
             ApplyTransform();
         }
 
-        // Places the camera at the configured starting angle and distance from InitialFocusPoint.
+        // Places the camera at the configured starting angle and distance from initialFocusPoint.
         [ContextMenu("Reset Framing")]
         public void ResetFraming()
         {
-            PivotPoint = InitialFocusPoint;
-            Yaw = InitialYaw;
-            Pitch = InitialPitch;
-            Distance = Mathf.Clamp(InitialDistance, MinZoomDistance, MaxZoomDistance);
+            pivotPoint = initialFocusPoint;
+            yaw = initialYaw;
+            pitch = initialPitch;
+            distance = Mathf.Clamp(initialDistance, minZoomDistance, maxZoomDistance);
 
-            // Abandon any snap in flight, otherwise it would drag Yaw off the value just set.
-            IsSnapping = false;
+            // Abandon any snap in flight, otherwise it would drag yaw off the value just set.
+            isSnapping = false;
 
             ApplyTransform();
         }
 
-        // Centres the camera on GridManagerRef's grid and pulls back far enough to see all of it.
-        // Yaw and Pitch are left alone - those are angle preferences, not size-dependent.
+        // Centres the camera on gridManagerRef's grid and pulls back far enough to see all of it.
+        // yaw and pitch are left alone - those are angle preferences, not size-dependent.
         [ContextMenu("Auto Frame Grid")]
         public void AutoFrameGrid()
         {
-            if (GridManagerRef == null)
+            if (gridManagerRef == null)
             {
                 Debug.LogWarning(
-                    $"{nameof(TacticsCameraController)}: no {nameof(GridManagerRef)} assigned, falling back to " +
-                    $"{nameof(InitialFocusPoint)}/{nameof(InitialDistance)}.",
+                    $"{nameof(TacticsCameraController)}: no {nameof(gridManagerRef)} assigned, falling back to " +
+                    $"{nameof(initialFocusPoint)}/{nameof(initialDistance)}.",
                     this);
 
-                PivotPoint = InitialFocusPoint;
-                Distance = Mathf.Clamp(InitialDistance, MinZoomDistance, MaxZoomDistance);
+                pivotPoint = initialFocusPoint;
+                distance = Mathf.Clamp(initialDistance, minZoomDistance, maxZoomDistance);
                 ApplyTransform();
                 return;
             }
 
-            float tileSize = GridManagerRef.TileSize;
-            int width = GridManagerRef.GridWidth;
-            int depth = GridManagerRef.GridDepth;
+            float tileSize = gridManagerRef.TileSize;
+            int width = gridManagerRef.GridWidth;
+            int depth = gridManagerRef.GridDepth;
 
             // Tile *centres* run from 0 to (count-1) * TileSize, so the midpoint is half of that -
             // not count * TileSize / 2, which would sit half a tile past the far edge. Offset by
@@ -127,13 +139,13 @@ namespace Tactica.Camera
             Vector3 centre = new Vector3(
                 (width - 1) * tileSize * 0.5f,
                 0f,
-                (depth - 1) * tileSize * 0.5f) + GridManagerRef.transform.position;
+                (depth - 1) * tileSize * 0.5f) + gridManagerRef.transform.position;
 
-            // Distance scales with the longer side, so a 20x20 board pulls back twice as far as a
+            // distance scales with the longer side, so a 20x20 board pulls back twice as far as a
             // 10x10 one and both read at the same relative size. The longer side is what decides
             // it: fitting that guarantees the shorter one fits too.
             //
-            // FramingPadding is a plain multiplier rather than a true fit, which would need the
+            // framingPadding is a plain multiplier rather than a true fit, which would need the
             // camera's FOV and aspect - roughly (span / 2) / tan(fov / 2), adjusted for pitch.
             // A tunable constant is easier to art-direct and does not break if the FOV changes.
             //
@@ -143,19 +155,20 @@ namespace Tactica.Camera
             // pulling back further for vertical maps.
             float longestSpan = Mathf.Max(width, depth) * tileSize;
 
-            PivotPoint = centre;
+            pivotPoint = centre;
 
             // Clamped to the zoom limits so auto-framing cannot put the camera somewhere the
-            // player could not scroll back to. Large maps may need MaxZoomDistance raised.
-            Distance = Mathf.Clamp(longestSpan * FramingPadding, MinZoomDistance, MaxZoomDistance);
+            // player could not scroll back to. Large maps may need maxZoomDistance raised.
+            distance = Mathf.Clamp(longestSpan * framingPadding, minZoomDistance, maxZoomDistance);
 
             ApplyTransform();
         }
 
         // Moves the pivot to look at a specific world position, keeping the current angle/zoom.
+        // INTENTIONAL API: unused today, the hook for camera-follows-active-unit.
         public void FocusOn(Vector3 worldPoint)
         {
-            PivotPoint = worldPoint;
+            pivotPoint = worldPoint;
             ApplyTransform();
         }
 
@@ -170,14 +183,14 @@ namespace Tactica.Camera
                 return;
             }
 
-            // Basis built from Yaw alone rather than transform.forward/right. Using the transform
+            // Basis built from yaw alone rather than transform.forward/right. Using the transform
             // would drag the camera's pitch into the movement (panning would slide you into the
             // ground) and would degenerate to a zero vector when looking straight down.
-            Quaternion flatRotation = Quaternion.Euler(0f, Yaw, 0f);
+            Quaternion flatRotation = Quaternion.Euler(0f, yaw, 0f);
             Vector3 forward = flatRotation * Vector3.forward;
             Vector3 right = flatRotation * Vector3.right;
 
-            PivotPoint += (right * input.x + forward * input.y) * (PanSpeed * Time.deltaTime);
+            pivotPoint += (right * input.x + forward * input.y) * (panSpeed * Time.deltaTime);
         }
 
         private void HandleZoom()
@@ -191,15 +204,15 @@ namespace Tactica.Camera
 
             // Changing distance from the pivot rather than sliding along the camera's local Z, so
             // zoom reads as "closer to what I am looking at" and cannot overshoot past the pivot.
-            Distance = Mathf.Clamp(Distance - notches * ZoomSpeed, MinZoomDistance, MaxZoomDistance);
+            distance = Mathf.Clamp(distance - notches * zoomSpeed, minZoomDistance, maxZoomDistance);
         }
 
-        // Pitch is never touched here - it stays at whatever ResetFraming set.
+        // pitch is never touched here - it stays at whatever ResetFraming set.
         private void HandleSnapRotation()
         {
             // Input is only read when idle, which is what drops presses mid-snap. Mashing Q/E
             // cannot queue up rotations; the extra presses are simply discarded.
-            if (IsSnapping)
+            if (isSnapping)
             {
                 AdvanceSnap();
                 return;
@@ -212,39 +225,39 @@ namespace Tactica.Camera
                 return;
             }
 
-            SnapStartYaw = Yaw;
-            SnapTargetYaw = Yaw + direction * 90f;
-            SnapElapsed = 0f;
-            IsSnapping = true;
+            snapStartYaw = yaw;
+            snapTargetYaw = yaw + direction * 90f;
+            snapElapsed = 0f;
+            isSnapping = true;
         }
 
         private void AdvanceSnap()
         {
-            SnapElapsed += Time.deltaTime;
+            snapElapsed += Time.deltaTime;
 
             // Land exactly on the target rather than easing asymptotically toward it. A plain
             // Lerp-toward-target each frame never quite arrives, which would let 90-degree steps
             // accumulate error over a session and leave the grid slightly off-axis.
-            if (SnapElapsed >= SnapRotationDuration)
+            if (snapElapsed >= snapRotationDuration)
             {
                 // Wrapped so yaw does not grow without bound over a long session.
-                Yaw = Mathf.Repeat(SnapTargetYaw, 360f);
-                IsSnapping = false;
+                yaw = Mathf.Repeat(snapTargetYaw, 360f);
+                isSnapping = false;
                 return;
             }
 
             // Mathf.Lerp, not LerpAngle: start and target are a known 90 apart and the direction
             // is deliberate. LerpAngle takes the shortest path, which discards that intent.
-            float t = SnapElapsed / SnapRotationDuration;
-            Yaw = Mathf.Lerp(SnapStartYaw, SnapTargetYaw, Mathf.SmoothStep(0f, 1f, t));
+            float t = snapElapsed / snapRotationDuration;
+            yaw = Mathf.Lerp(snapStartYaw, snapTargetYaw, Mathf.SmoothStep(0f, 1f, t));
         }
 
         // Rebuilds position and rotation from pivot/yaw/pitch/distance. The one place the
         // transform is written.
         private void ApplyTransform()
         {
-            Quaternion rotation = Quaternion.Euler(Pitch, Yaw, 0f);
-            Vector3 position = PivotPoint - rotation * Vector3.forward * Distance;
+            Quaternion rotation = Quaternion.Euler(pitch, yaw, 0f);
+            Vector3 position = pivotPoint - rotation * Vector3.forward * distance;
 
             transform.SetPositionAndRotation(position, rotation);
         }

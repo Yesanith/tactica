@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Tactica.Grid
 {
@@ -7,7 +8,7 @@ namespace Tactica.Grid
     // namespace block to win that lookup - at file scope it would be checked too late.
     using Camera = UnityEngine.Camera;
 
-    // Drives GridManager.UpdateCursorHighlight once per frame. Attach next to a GridManager.
+    // Drives GridManager.SetHoveredTile once per frame. Attach next to a GridManager.
     //
     // Separate component rather than an Update() on GridManager: keeps input policy and the camera
     // reference out of the data layer, avoids a per-frame call on grids that don't need hover, and
@@ -16,46 +17,49 @@ namespace Tactica.Grid
     public class GridCursorHighlighter : MonoBehaviour
     {
         [Tooltip("Grid to highlight. Defaults to a GridManager on this GameObject, then to the first one in the scene.")]
-        [SerializeField] private GridManager Grid;
+        [FormerlySerializedAs("Grid")]
+        [SerializeField] private GridManager grid;
 
         [Tooltip("Camera the hover ray is cast from. Defaults to Camera.main.")]
-        [SerializeField] private Camera Cam;
+        [FormerlySerializedAs("Cam")]
+        [SerializeField] private Camera cam;
 
         [Tooltip("Log each coordinate as the cursor enters it. Debugging aid only.")]
-        [SerializeField] private bool LogHoveredCoords;
+        [FormerlySerializedAs("LogHoveredCoords")]
+        [SerializeField] private bool logHoveredCoords;
 
-        private Vector2Int? LastLoggedCoords;
+        private Vector2Int? lastLoggedCoords;
 
         private void Awake()
         {
-            if (Grid == null)
+            if (grid == null)
             {
-                Grid = GetComponent<GridManager>();
+                grid = GetComponent<GridManager>();
             }
 
-            if (Grid == null)
+            if (grid == null)
             {
                 // FindAnyObjectByType, not the deprecated FindObjectOfType/FindFirstObjectByType.
                 // Full scene scan - fine once in Awake, never in Update.
-                Grid = FindAnyObjectByType<GridManager>();
+                grid = FindAnyObjectByType<GridManager>();
             }
 
-            if (Cam == null)
+            if (cam == null)
             {
-                Cam = Camera.main;
+                cam = Camera.main;
             }
         }
 
         private void OnEnable()
         {
-            if (Grid == null)
+            if (grid == null)
             {
                 Debug.LogWarning($"{nameof(GridCursorHighlighter)}: no {nameof(GridManager)} found, disabling.", this);
                 enabled = false;
                 return;
             }
 
-            if (Cam == null)
+            if (cam == null)
             {
                 Debug.LogWarning(
                     $"{nameof(GridCursorHighlighter)}: no camera assigned and no Camera.main in the scene " +
@@ -65,61 +69,60 @@ namespace Tactica.Grid
             }
         }
 
+        // One raycast per frame, shared by every consumer below. Hover, click handling and logging
+        // all used to call GetTileUnderCursor independently, costing up to three physics raycasts
+        // in a frame where the player clicked with logging on - and letting them disagree if the
+        // cursor moved between calls.
         private void Update()
         {
-            Grid.UpdateCursorHighlight(Cam);
+            Vector2Int? hoveredCoords = grid.GetTileUnderCursor(cam, out Vector2Int coords)
+                ? coords
+                : (Vector2Int?)null;
 
-            if (LogHoveredCoords)
+            grid.SetHoveredTile(hoveredCoords);
+
+            if (logHoveredCoords)
             {
-                LogOnChange();
+                LogOnChange(hoveredCoords);
             }
 
-            if (GridInput.WasLeftClickThisFrame())
+            if (hoveredCoords.HasValue && GridInput.WasLeftClickThisFrame())
             {
-                HandleLeftClick();
+                HandleLeftClick(hoveredCoords.Value);
             }
         }
 
-        // TEMPORARY TEST BEHAVIOUR - clicking a range tile moves GridManager's TestUnit.
-        // Stands in for real selection input; remove alongside the TestUnit wiring.
-        private void HandleLeftClick()
+        // Clicking a highlighted range tile moves the unit whose turn it is. GridManager resolves
+        // who that is and whether the turn state permits it.
+        private void HandleLeftClick(Vector2Int coords)
         {
-            if (!Grid.GetTileUnderCursor(Cam, out Vector2Int coords))
-            {
-                return;
-            }
-
             // Only tiles currently showing as in-range are valid targets. TryMoveUnitToTile
             // re-validates against live grid data, so this is a UI gate, not the authority.
-            if ((Grid.GetTileHighlightState(coords) & TileHighlightState.InMoveRange) == 0)
+            if ((grid.GetTileHighlightState(coords) & TileHighlightState.InMoveRange) == 0)
             {
                 return;
             }
 
-            Grid.TryMoveTestUnitTo(coords);
+            grid.TryMoveActiveUnitTo(coords);
         }
 
         // Otherwise the last hovered tile stays lit with nothing left running to clear it.
         private void OnDisable()
         {
-            if (Grid != null)
+            if (grid != null)
             {
-                Grid.ClearCursorHighlight();
+                grid.ClearCursorHighlight();
             }
         }
 
-        private void LogOnChange()
+        private void LogOnChange(Vector2Int? current)
         {
-            Vector2Int? current = Grid.GetTileUnderCursor(Cam, out Vector2Int coords)
-                ? coords
-                : (Vector2Int?)null;
-
-            if (current == LastLoggedCoords)
+            if (current == lastLoggedCoords)
             {
                 return;
             }
 
-            LastLoggedCoords = current;
+            lastLoggedCoords = current;
             Debug.Log(current.HasValue ? $"Hovering tile {current.Value}" : "Cursor off grid");
         }
     }

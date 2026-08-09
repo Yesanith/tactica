@@ -35,6 +35,7 @@ namespace Tactica.Grid
             Occupant = occupant;
         }
 
+        // INTENTIONAL API: unused today, the natural predicate for spawn placement and AI.
         public bool IsFree => IsWalkable && Occupant == null;
 
         public override string ToString()

@@ -105,3 +105,49 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# =============================================================================
+# Local tooling / IDE
+# Project-specific additions below this line. NOT part of the upstream Unity
+# template above - keep them here so re-syncing that template stays a clean
+# replace of everything above this header.
+# =============================================================================
+
+# Claude Code local session state and per-machine settings. Whole directory.
+.claude/
+
+# VS Code workspace settings. Not covered by the Unity template.
+.vscode/
+
+# JetBrains Rider / IntelliJ. The Unity template covers only the auto-generated
+# Rider plugin folder and *.DotSettings.user, not the .idea directory itself.
+.idea/
+
+# Visual Studio's XML solution format. The template ignores *.sln but predates
+# *.slnx, which VS 2022 17.13+ and Unity 6 generate alongside it.
+*.slnx
+
+# OS cruft
+.DS_Store
+.AppleDouble
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+[Dd]esktop.ini
+
+# Local environment and secrets. Preventative - none of these exist in the repo
+# today. Keep credentials out of Assets/ entirely; anything under Assets/ needs a
+# .meta file and is easy to commit by accident.
+.env
+.env.*
+!.env.example
+*.local.json
+appsettings.local.json
+secrets.json
+
+# Android signing material. Leaking these lets someone ship as you.
+*.keystore
+*.jks

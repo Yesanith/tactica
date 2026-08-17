@@ -10,13 +10,13 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 6360f27eda9cc464e92c69c63ddee4a6, type: 3}
-  m_Name: DigitalBash
+  m_Name: GoonPunch
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.AbilityDefinition
-  abilityName: Digital Bash
-  description: Use your DigiShield and bash an enemy.
-  mpCost: 0
+  abilityName: Goon Punch
+  description: 
+  mpCost: 4
   range: 1
-  areaOfEffect: 0
+  areaOfEffect: 1
   effectType: 0
   power: 5
   targetsSelf: 0

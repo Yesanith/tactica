@@ -20,8 +20,8 @@ Last updated 2026-08-17.
 - [x] **Phase 3** — Job / Stat System
 - [x] **Phase 4** — Combat Core
 - [x] **Phase 5** — UI
-- [ ] **Phase 6** — Enemy AI ← *currently here*
-- [ ] **Phase 7** — Recruitment / Mission Flow
+- [x] **Phase 6** — Enemy AI
+- [ ] **Phase 7** — Recruitment / Mission Flow ← *currently here*
 - [ ] **Phase 8** — Polish
 
 ---
@@ -94,28 +94,71 @@ grid.
 
 *Deferred:* the defensive stance has no status icon yet — it is visible only in the console.
 
+### Phase 6 — Enemy AI
+
+Non-player units take their own turns end to end: pick a target, walk into range, attack, hand the
+turn on. A full encounter now plays through with no manual intervention on the AI side.
+`EnemyAIController` reuses the same primitives the player path does — the move-range flood fill,
+`TryMoveUnitToTile`, `ActionResolver` — so both sides are bound by identical rules.
+
+*Decisions:* the AI is a **sibling of `PlayerActionController`, not a branch inside it**. The two
+share every action primitive and differ only in where the decision comes from — a button versus an
+evaluation — so merging them would buy nothing and cost a class whose every method opens with
+"if this is an AI turn". Both subscribe to the same turn-change event and ignore the turns that are
+not theirs, so neither knows the other exists.
+
+A turn runs as a **coroutine**, and that is structural rather than cosmetic: ending a turn inline
+would call `EndCurrentTurn` from inside the event that dispatched it, so an all-AI round would
+resolve as one nested call stack in a single frame with the state machine re-entering itself.
+Yielding first gives each turn its own frame — and, incidentally, makes it watchable.
+
+Ending an AI turn calls `EndCurrentTurn` **directly** rather than going through anything shaped
+like the player's Wait. Wait grants the defensive stance, which is a player *choice*; an AI unit
+that waited would be taking a decision nobody made.
+
+*Deferred:* target selection is a placeholder heuristic — see below.
+
 ---
 
 ## Currently working on
 
-### Phase 6 — Enemy AI
+### Phase 7 — Recruitment / Mission Flow
 
-Giving non-player units their own turns instead of the player driving everyone.
+Not started. Combat is playable end to end; what is missing is everything around it — a roster that
+persists between fights, units joining it, and missions to spend them on.
 
-**Already in place for it.** The turn system was built so this drops in rather than forces a
-rewrite: `CombatManager.BeginTurnFor` resets per-turn state for *every* unit, not just the player's,
-and does so without depending on any listener existing. Per-turn flags (`HasMovedThisTurn`,
-`HasAttackedThisTurn`, `IsDefending`) live on `GridUnit` rather than inside the input controller, so
-an AI handler reads the same answers from the same place. `ActionResolver` needs no scene, and
-`GetTilesInMoveRange` / `GetGridDistance` already answer "where can I go" and "what can I reach".
+**Blocker carried over from Phase 6.** There is still no faction system. `GridUnit.isPlayerControlled`
+is a bool and `ActionResolver` treats *any* unit that is not the user as an enemy — the same missing
+concept seen from two sides. The AI works today only because every encounter is one side against
+one other; it cannot be told not to attack its own allies, which a third party or a charmed unit
+would require immediately. Recruitment makes this urgent rather than theoretical, since a recruited
+unit changes side by definition.
 
-**The shape.** An AI turn handler sitting beside `PlayerActionController` as a sibling — same
-inputs, same rules, different decision-maker.
+**Also relevant.** Runtime unit spawning already works — unit status bars are built entirely in
+code precisely so a unit that does not exist at author time can still have one.
 
-**Blocker to settle first.** There is still no faction system: `GridUnit.isPlayerControlled` is a
-bool, and `ActionResolver` treats *any* unit that is not the user as an enemy. Both are the same
-missing concept seen from two sides, and an AI that picks targets will need the real thing — it
-cannot currently be told not to attack its allies.
+---
+
+## Deferred by design
+
+Things we have deliberately not built yet, and what unblocks each. Not bugs, and not a backlog —
+just decisions made once so they do not get re-litigated.
+
+- **A distinct basic weapon attack.** Attack currently runs through the same path as any job
+  ability: `SelectAbility` picks the first unlocked one and resolves it normally. A separate basic
+  attack — no MP cost, damage sourced from the equipped weapon — needs somewhere for "equipped
+  weapon" to live, so it waits on an equipment/inventory system. Nothing to change in the meantime;
+  a job's first ability stands in perfectly well.
+- **Smarter AI target selection and behaviour variation.** The AI currently picks the enemy with
+  the **lowest current HP** among those it can reach this turn — "finish the wounded one" —
+  falling back to the nearest valid target when nothing is in reach. It is flagged as a placeholder
+  in `EnemyAIController` and ignores what a target can actually *do*: damage output, healers and
+  buffers, whether a kill is securable, how exposed attacking leaves the attacker.
+  Behaviour that varies with the AI's own state — retreating or playing safe at low HP — waits on
+  equipment and items, because "act differently when hurt" needs something to actually do about it.
+  Fleeing, healing and defending are all either unavailable or meaningless right now, so the
+  variation would be a branch with nothing behind it.
+- **A status icon for the defensive stance** — see Phase 5. Console-only until the HUD grows one.
 
 ---
 

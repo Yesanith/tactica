@@ -14,8 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
   jobName: New Job
   baseStats:
-    MaxHP: 1
-    MaxMP: 1
+    MaxHP: 15
+    MaxMP: 20
     Strength: 1
     Magic: 1
     Defense: 1
@@ -31,4 +31,6 @@ MonoBehaviour:
     Speed: 1
     Move: 0
     Jump: 0
-  abilityUnlocks: []
+  abilityUnlocks:
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 2618bd2d6f8374640bdfc10b91441687, type: 2}

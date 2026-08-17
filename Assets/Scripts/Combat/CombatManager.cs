@@ -42,7 +42,9 @@ namespace Tactica.Combat
         // the concept somewhere to live.
         public int RoundNumber { get; private set; }
 
-        // INTENTIONAL API: unused today, for a turn-order UI strip.
+        // The encounter's roster in a stable order. EnemyAIController iterates it to find targets,
+        // and relies on the order being stable for its tie-breaks. Also the source for an eventual
+        // turn-order UI strip.
         public IReadOnlyList<GridUnit> TurnOrder => initiativeOrder;
 
         // Stateless rules engine, so one instance serves the whole encounter. Owned here because

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.Serialization;
+using Tactica.Combat;
 
 namespace Tactica.Grid
 {
@@ -24,6 +25,10 @@ namespace Tactica.Grid
         [FormerlySerializedAs("Cam")]
         [SerializeField] private Camera cam;
 
+        [Tooltip("Decides what a click means. Defaults to the first one in the scene. Without it " +
+                 "hover still works but clicks do nothing.")]
+        [SerializeField] private PlayerActionController actionController;
+
         [Tooltip("Log each coordinate as the cursor enters it. Debugging aid only.")]
         [FormerlySerializedAs("LogHoveredCoords")]
         [SerializeField] private bool logHoveredCoords;
@@ -47,6 +52,11 @@ namespace Tactica.Grid
             if (cam == null)
             {
                 cam = Camera.main;
+            }
+
+            if (actionController == null)
+            {
+                actionController = FindAnyObjectByType<PlayerActionController>();
             }
         }
 
@@ -73,8 +83,32 @@ namespace Tactica.Grid
         // all used to call GetTileUnderCursor independently, costing up to three physics raycasts
         // in a frame where the player clicked with logging on - and letting them disagree if the
         // cursor moved between calls.
-        private void Update()
+        //
+        // LateUpdate, not Update, for two reasons:
+        //   1. EventSystem processes input modules in its own Update, and Update-to-Update order
+        //      between components is undefined. Running here means the UI has finished handling
+        //      the pointer for this frame before any world click is considered, so a button press
+        //      cannot also register as a board click.
+        //   2. TacticsCameraController moves the camera in Update, so hover computed here reflects
+        //      where the camera actually ended up rather than trailing it by a frame.
+        //
+        // Mouse.current.leftButton.wasPressedThisFrame stays true for the whole frame, so reading
+        // the click later costs nothing.
+        private void LateUpdate()
         {
+            // UI gets first refusal on the pointer. Without this the world raycast runs in parallel
+            // with a Button's own onClick, so pressing Wait both ends the turn AND fires a board
+            // click at whatever tile happened to be behind the HUD.
+            //
+            // Hover is cleared rather than merely skipped: returning early without this would leave
+            // the last tile lit while the cursor sits on the HUD, and it would stay lit until the
+            // pointer returned to the board.
+            if (GridInput.IsPointerOverUI())
+            {
+                grid.SetHoveredTile(null);
+                return;
+            }
+
             Vector2Int? hoveredCoords = grid.GetTileUnderCursor(cam, out Vector2Int coords)
                 ? coords
                 : (Vector2Int?)null;
@@ -92,18 +126,16 @@ namespace Tactica.Grid
             }
         }
 
-        // Clicking a highlighted range tile moves the unit whose turn it is. GridManager resolves
-        // who that is and whether the turn state permits it.
+        // Reports the clicked tile and lets PlayerActionController decide what it means - move,
+        // ability target, or cancel. This component owns the raycast, not the rules.
         private void HandleLeftClick(Vector2Int coords)
         {
-            // Only tiles currently showing as in-range are valid targets. TryMoveUnitToTile
-            // re-validates against live grid data, so this is a UI gate, not the authority.
-            if ((grid.GetTileHighlightState(coords) & TileHighlightState.InMoveRange) == 0)
+            if (actionController == null)
             {
                 return;
             }
 
-            grid.TryMoveActiveUnitTo(coords);
+            actionController.HandleTileClicked(coords);
         }
 
         // Otherwise the last hovered tile stays lit with nothing left running to clear it.

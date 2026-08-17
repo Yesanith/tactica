@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
-using Tactica.Combat;
 
 namespace Tactica.Grid
 {
@@ -10,8 +9,12 @@ namespace Tactica.Grid
     // namespace block to win that lookup - at file scope it would be checked too late.
     using Camera = UnityEngine.Camera;
 
-    // Grid data layer: tile storage, generation, coordinate conversion, and the visuals derived
-    // from them.
+    // Grid data layer: tile storage, generation, coordinate conversion, pathfinding, and the
+    // visuals derived from them.
+    //
+    // Knows nothing about combat. Turn order, the active unit and the combat state gate all live
+    // in PlayerActionController, which drives this rather than being consulted by it - that is what
+    // keeps Tactica.Grid free of a Tactica.Combat reference and breaks half the old namespace cycle.
     public class GridManager : MonoBehaviour
     {
         // Dictionary rather than GridTile[,] (UE5: TMap<FIntPoint, FGridTile>). Costs a hash per
@@ -75,27 +78,15 @@ namespace Tactica.Grid
         [FormerlySerializedAs("RangeMaterial")]
         [SerializeField] private Material rangeMaterial;
 
+        [Tooltip("Valid ability target colour. Should read clearly against rangeMaterial - a tile " +
+                 "can be both reachable and attackable, and this wins.")]
+        [SerializeField] private Material attackableMaterial;
+
         [Header("Movement")]
         // Placeholder for tuning: will likely become per-unit, with separate up/down limits.
         [Tooltip("Maximum absolute height difference a unit may traverse in one step.")]
         [FormerlySerializedAs("MaxStepHeight")]
         [SerializeField] private int maxStepHeight = 1;
-
-        [Header("Combat")]
-        [Tooltip("Source of the current turn owner. If unset, click-to-move falls back to " +
-                 "testUnit and turn order is not enforced.")]
-        [FormerlySerializedAs("CombatManagerRef")]
-        [SerializeField] private CombatManager combatManagerRef;
-
-        // TEMPORARY TEST WIRING - REMOVE once combat is always present in a scene.
-        [Header("Debug (temporary)")]
-        [Tooltip("TEMPORARY fallback for testing without a CombatManager. Its range is shown on " +
-                 "Start, and it receives clicks when combatManagerRef is unset.")]
-        [FormerlySerializedAs("TestUnit")]
-        [SerializeField] private GridUnit testUnit;
-
-        // Keeps the fallback warning to one message instead of one per click.
-        private bool warnedAboutMissingCombatManager;
 
         // Must exist in Project Settings > Tags and Layers. Layers cannot be created from a
         // script, only read by name - so this resolves to -1 if someone deletes it.
@@ -125,6 +116,10 @@ namespace Tactica.Grid
         // recomputed at clear time, since the grid may have changed in between.
         private readonly List<Vector2Int> moveRangeHighlights = new List<Vector2Int>();
 
+        // Same record-what-was-lit approach as moveRangeHighlights, for the same reason: the grid
+        // may change between showing and clearing, so recomputing would not match what is on screen.
+        private readonly List<Vector2Int> attackableHighlights = new List<Vector2Int>();
+
         // Awake -> data, Start -> visuals. Every Awake runs before any Start, so other scripts can
         // reshape the grid in their Awake and the visuals will reflect it.
         private void Awake()
@@ -132,63 +127,9 @@ namespace Tactica.Grid
             GenerateGrid();
         }
 
-        // OnEnable/OnDisable rather than Awake/OnDestroy: symmetric, so toggling this component off
-        // and on re-subscribes exactly once, and OnDisable runs on the way to destruction anyway.
-        // Subscribing in Awake and never unsubscribing would keep this object alive through the
-        // event's delegate list after a scene change - the usual C# event leak in Unity.
-        private void OnEnable()
-        {
-            if (combatManagerRef != null)
-            {
-                combatManagerRef.OnActiveUnitChanged += HandleActiveUnitChanged;
-            }
-        }
-
-        private void OnDisable()
-        {
-            if (combatManagerRef != null)
-            {
-                combatManagerRef.OnActiveUnitChanged -= HandleActiveUnitChanged;
-            }
-        }
-
         private void Start()
         {
             RenderGrid();
-
-            // Only when nothing else drives the display. With a CombatManager present,
-            // OnActiveUnitChanged owns the highlight, and showing testUnit here would leave a
-            // stale range on screen until the first turn change.
-            //
-            // Known limitation, confined to this branch: GridUnit claims its tile via SetOccupant
-            // in its own Start, and two Starts have no defined order - so this range may be
-            // computed before some units have marked their tiles occupied. Harmless with a single
-            // unit (a unit's own tile is excluded from its range regardless); with several it can
-            // briefly show a tile that is actually taken.
-            //
-            // The combat path does NOT have this problem: StartCombat is invoked manually, long
-            // after every Start has run. So this dies entirely along with testUnit - there is
-            // nothing to fix here, only something to delete.
-            //
-            // TEMPORARY - REMOVE with the testUnit field.
-            if (combatManagerRef == null && testUnit != null)
-            {
-                ShowMoveRangeForUnit(testUnit);
-            }
-        }
-
-        // Turn passed to someone else: retire the old range and draw the new one.
-        // ShowMoveRangeForUnit already clears first, so the explicit clear is only needed for the
-        // null case (combat failed to start, or ended).
-        private void HandleActiveUnitChanged(GridUnit unit)
-        {
-            if (unit == null)
-            {
-                ClearMoveRangeHighlight();
-                return;
-            }
-
-            ShowMoveRangeForUnit(unit);
         }
 
         // Builds a flat, fully walkable grid from (0,0) to (GridWidth-1, GridDepth-1).
@@ -297,6 +238,7 @@ namespace Tactica.Grid
             highlightStates.Clear();
             highlightedCoords = null;
             moveRangeHighlights.Clear();
+            attackableHighlights.Clear();
         }
 
         // Index of the "Tiles" layer, or -1 if it does not exist in the project.
@@ -436,6 +378,12 @@ namespace Tactica.Grid
             if ((state & TileHighlightState.Hovered) != 0 && highlightMaterial != null)
             {
                 material = highlightMaterial;
+            }
+            // Attackable outranks InMoveRange: when a tile is both, "I can hit this" is the more
+            // urgent fact, and the move range is already legible from the tiles around it.
+            else if ((state & TileHighlightState.Attackable) != 0 && attackableMaterial != null)
+            {
+                material = attackableMaterial;
             }
             else if ((state & TileHighlightState.InMoveRange) != 0 && rangeMaterial != null)
             {
@@ -578,7 +526,7 @@ namespace Tactica.Grid
         // play drifts toward moving on diagonals. If that becomes visible in playtesting, the fix
         // is weighted edges - which means swapping the Queue below for a priority queue, not
         // restructuring anything else.
-        private static readonly Vector2Int[] NeighborDirections =
+        private static readonly Vector2Int[] NeighbourDirections =
         {
             new Vector2Int(1, 0),
             new Vector2Int(-1, 0),
@@ -671,7 +619,7 @@ namespace Tactica.Grid
 
                 GridTile currentTile = GridTiles[currentCoords];
 
-                foreach (Vector2Int direction in NeighborDirections)
+                foreach (Vector2Int direction in NeighbourDirections)
                 {
                     bool isDiagonalStep = direction.x != 0 && direction.y != 0;
 
@@ -762,6 +710,34 @@ namespace Tactica.Grid
             }
         }
 
+        // Lights the given tiles as ability targets, replacing any previous set.
+        // Touches only the Attackable layer, so hover and move range survive underneath.
+        public void ShowAttackableTiles(IEnumerable<Vector2Int> coords)
+        {
+            ClearAttackableHighlights();
+
+            if (coords == null)
+            {
+                return;
+            }
+
+            foreach (Vector2Int tile in coords)
+            {
+                SetTileHighlight(tile, TileHighlightState.Attackable, true);
+                attackableHighlights.Add(tile);
+            }
+        }
+
+        public void ClearAttackableHighlights()
+        {
+            foreach (Vector2Int coords in attackableHighlights)
+            {
+                SetTileHighlight(coords, TileHighlightState.Attackable, false);
+            }
+
+            attackableHighlights.Clear();
+        }
+
         public void ClearMoveRangeHighlight()
         {
             foreach (Vector2Int coords in moveRangeHighlights)
@@ -774,11 +750,20 @@ namespace Tactica.Grid
 
         // Moves the unit if targetCoords is within its current move range. No side effects if not.
         //
+        // The caller supplies the unit rather than this resolving the turn owner itself. There used
+        // to be a TryMoveActiveUnitTo wrapper that took a bare coordinate and re-derived the unit
+        // and the combat-state gate - both of which PlayerActionController had already done before
+        // calling it. Resolving twice meant the two could in principle disagree, and the unit that
+        // got MarkMoved() was not provably the one that moved.
+        //
         // Recomputes the range rather than trusting moveRangeHighlights: that list is a record of
         // what is *displayed*, and the grid may have changed since it was drawn (another unit
         // moved, a tile became unwalkable), which would let an illegal move through. Recomputing
         // is O(tiles in range) per click - free at this scale. Cache it only if a profiler says so,
         // and then invalidate it on any grid mutation.
+        //
+        // Deliberately does not end the turn. Moving and ending a turn are separate player actions
+        // - move then attack, or move then wait - so the player decides when the turn is over.
         public bool TryMoveUnitToTile(GridUnit unit, Vector2Int targetCoords)
         {
             if (unit == null)
@@ -799,82 +784,11 @@ namespace Tactica.Grid
             // Sets the coordinate and snaps the transform in one step.
             unit.SetGridCoords(targetCoords);
 
+            // Clear rather than redraw from the new position. Movement is once per turn
+            // (GridUnit.HasMovedThisTurn), so leaving a range lit would advertise a move the unit
+            // can no longer make.
             ClearMoveRangeHighlight();
             return true;
-        }
-
-        // Moves whoever currently holds the turn onto targetCoords. Entry point for click input.
-        //
-        // Deliberately does not end the turn. Moving and ending a turn are separate player
-        // actions - move then attack, or move then wait - so state stays WaitingForInput and the
-        // player decides when the turn is over.
-        public bool TryMoveActiveUnitTo(Vector2Int targetCoords)
-        {
-            if (!TryGetActiveUnit(out GridUnit unit))
-            {
-                return false;
-            }
-
-            // Gate on turn state, but only when there is a combat to ask. Anything other than
-            // WaitingForInput means an action is already playing out or the encounter is over,
-            // and a click landing then would queue a second action mid-resolution.
-            if (combatManagerRef != null && combatManagerRef.CurrentState != CombatState.WaitingForInput)
-            {
-                Debug.Log(
-                    $"{nameof(GridManager)}: move rejected - combat state is " +
-                    $"{combatManagerRef.CurrentState}, expected {CombatState.WaitingForInput}.",
-                    this);
-
-                return false;
-            }
-
-            if (!TryMoveUnitToTile(unit, targetCoords))
-            {
-                return false;
-            }
-
-            // Redraw from the new position. NOTE: nothing tracks "already moved this turn" yet,
-            // so leaving the range up means a unit can keep moving until the turn is ended. That
-            // rule belongs with action economy, not here.
-            ShowMoveRangeForUnit(unit);
-            return true;
-        }
-
-        // The unit clicks should act on: the turn owner when combat is running, testUnit when it
-        // is not. Returns false when neither is available.
-        private bool TryGetActiveUnit(out GridUnit unit)
-        {
-            if (combatManagerRef != null)
-            {
-                unit = combatManagerRef.GetActiveUnit();
-
-                if (unit == null)
-                {
-                    Debug.Log(
-                        $"{nameof(GridManager)}: move rejected - combat has no active unit. " +
-                        $"Has {nameof(CombatManager.StartCombat)} been called?",
-                        this);
-
-                    return false;
-                }
-
-                return true;
-            }
-
-            // FALLBACK - remove alongside testUnit. Keeps click-to-move testable in scenes that
-            // have no CombatManager yet, at the cost of enforcing no turn order at all.
-            if (!warnedAboutMissingCombatManager)
-            {
-                warnedAboutMissingCombatManager = true;
-
-                Debug.LogWarning(
-                    $"{nameof(GridManager)}: no {nameof(combatManagerRef)} assigned, falling back to " +
-                    $"{nameof(testUnit)}. Turn order and combat state are not enforced.",
-                    this);
-            }
-
-            unit = testUnit;
-            return unit != null;
         }
 
         // ---------------------------------------------------------------------
@@ -884,7 +798,8 @@ namespace Tactica.Grid
         // INTENTIONAL API: unused today, for validating coordinates from UI and map editing.
         public bool HasTile(Vector2Int coords) => GridTiles.ContainsKey(coords);
 
-        // INTENTIONAL API: unused today, the read path for ability targeting and AI queries.
+        // The read path for ability targeting - PlayerActionController.GetUnitAt resolves occupants
+        // through this.
         public bool TryGetTile(Vector2Int coords, out GridTile tile) => GridTiles.TryGetValue(coords, out tile);
 
         // These setters return false if no tile exists at the given coordinates.

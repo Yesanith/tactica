@@ -12,5 +12,9 @@ namespace Tactica.Grid
         None = 0,
         InMoveRange = 1 << 0,
         Hovered = 1 << 1,
+
+        // Tiles holding a unit the current ability may legally hit. Independent of InMoveRange:
+        // a tile can be both reachable and attackable, and each system sets only its own bit.
+        Attackable = 1 << 2,
     }
 }

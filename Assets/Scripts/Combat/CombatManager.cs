@@ -79,7 +79,7 @@ namespace Tactica.Combat
 
             // Fired last, once state and index are settled, so a listener reading CurrentState or
             // GetActiveUnit from inside the handler sees the finished turn, not a half-built one.
-            OnActiveUnitChanged?.Invoke(GetActiveUnit());
+            BeginTurnFor(GetActiveUnit());
         }
 
         // Whoever is currently acting, or null before StartCombat or after CombatEnd.
@@ -152,7 +152,25 @@ namespace Tactica.Combat
 
             Debug.Log($"Round {RoundNumber} - {GetActiveUnit().name}'s turn.", this);
 
-            OnActiveUnitChanged?.Invoke(GetActiveUnit());
+            BeginTurnFor(GetActiveUnit());
+        }
+
+        // Resets the incoming unit's per-turn state, then announces the change.
+        //
+        // Done here rather than by having PlayerActionController subscribe to OnActiveUnitChanged:
+        // the reset is an invariant of the turn system, so it must happen for AI-driven turns too,
+        // and must not depend on any particular listener existing or being enabled. Resetting
+        // before the event also means every listener sees already-reset state.
+        //
+        // A null unit (combat ended) just notifies - there is no turn to begin.
+        private void BeginTurnFor(GridUnit unit)
+        {
+            if (unit != null)
+            {
+                unit.BeginTurn();
+            }
+
+            OnActiveUnitChanged?.Invoke(unit);
         }
 
         // Whether one side has been wiped out. Reads participatingUnits, not initiativeOrder, so

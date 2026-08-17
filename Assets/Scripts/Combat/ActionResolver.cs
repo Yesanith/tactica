@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using Tactica.Grid;
 using Tactica.Stats;
@@ -11,6 +12,16 @@ namespace Tactica.Combat
     // main reason to keep combat maths out of components.
     public class ActionResolver
     {
+        // Raised after an action has finished mutating stats. An event rather than a direct call
+        // into CombatHUD on purpose: this class is a plain C# object constructible in a test
+        // without a scene, and holding a reference to a MonoBehaviour would end that. Listeners
+        // decide what "something changed" means to them - HUD refresh today, floating combat text
+        // and audio later - without this class learning about any of them.
+        //
+        // Coarse by design: it says stats changed, not which. Panels re-read whatever they display,
+        // which is cheap and cannot go out of sync with a more precise payload.
+        public event Action OnStatsChanged;
+
         // Distance is Chebyshev (8-directional) steps, ignoring terrain and obstacles - a
         // diagonal neighbour is range 1, same as an orthogonal one. See
         // GridManager.GetGridDistance for why the move-range flood fill is the wrong tool here.
@@ -118,6 +129,12 @@ namespace Tactica.Combat
 
             user.CurrentStats.MP -= ability.MPCost;
 
+            // Written directly rather than through a GridUnit method, so nothing refreshes the
+            // user's bar automatically - see the note on RefreshStatusBar. Without this call the
+            // MP bar only updates on the caster's next damage or heal, which reads as the bar
+            // being broken. Delete this line once MP spending goes through GridUnit.
+            user.RefreshStatusBar();
+
             switch (ability.EffectType)
             {
                 case AbilityEffectType.Damage:
@@ -165,6 +182,10 @@ namespace Tactica.Combat
                     break;
                 }
             }
+
+            // After the switch, so listeners observe the finished result rather than a half-applied
+            // one. Not raised on any rejection path above - nothing changed there.
+            OnStatsChanged?.Invoke();
 
             return true;
         }

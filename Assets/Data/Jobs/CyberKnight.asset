@@ -20,7 +20,7 @@ MonoBehaviour:
     Magic: 5
     Defense: 4
     Speed: 6
-    Move: 2
+    Move: 3
     Jump: 1
     Evasion: 10
   statGrowthPerLevel:

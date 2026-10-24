@@ -107,6 +107,11 @@ namespace Tactica.Campaign
 
             RemoveAuthoredUnits();
 
+            // A fresh board per contract. Safe here because the previous mission's units were
+            // destroyed in ClearBoard and the authored ones just above - nothing occupies a tile
+            // that is about to disappear.
+            gridManagerRef.BuildMap(mission.map);
+
             currentMission = mission;
 
             foreach (RosterUnit rosterUnit in deployed)

@@ -43,6 +43,15 @@ MonoBehaviour:
   missions:
   - missionName: Street Sweep
     description: One ganger on a dead-end block. The quickest full contract loop.
+    map:
+      width: 12
+      depth: 10
+      seed: 101
+      maxHeight: 2
+      heightStep: 0.5
+      edgeDepth: 2
+      holeChance: 0.04
+      coverChance: 0.04
     opponents:
     - unitName: Gooner
       job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
@@ -50,6 +59,15 @@ MonoBehaviour:
       faction: 1
   - missionName: Gang Turf
     description: Three Gooners holding a noodle-bar rooftop. Fast, and they come round often.
+    map:
+      width: 14
+      depth: 11
+      seed: 202
+      maxHeight: 3
+      heightStep: 0.5
+      edgeDepth: 2
+      holeChance: 0.06
+      coverChance: 0.06
     opponents:
     - unitName: Gooner A
       job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
@@ -65,6 +83,15 @@ MonoBehaviour:
       faction: 1
   - missionName: Block Watch
     description: Two raiders shaking down a civilian netrunner. She fights on your side but makes her own calls. Keep her alive.
+    map:
+      width: 14
+      depth: 12
+      seed: 303
+      maxHeight: 2
+      heightStep: 0.5
+      edgeDepth: 3
+      holeChance: 0.05
+      coverChance: 0.08
     objective: 2
     objectiveUnitName: Civilian
     opponents:
@@ -83,6 +110,15 @@ MonoBehaviour:
       guest: 1
   - missionName: Chrome Brute
     description: One heavily augmented enforcer. Expect to lose someone; reboot them before they flatline.
+    map:
+      width: 12
+      depth: 12
+      seed: 404
+      maxHeight: 4
+      heightStep: 0.5
+      edgeDepth: 2
+      holeChance: 0.03
+      coverChance: 0.05
     opponents:
     - unitName: Chrome Brute
       job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
@@ -90,6 +126,15 @@ MonoBehaviour:
       faction: 1
   - missionName: Cut the Signal
     description: A gang Kingpin runs the block's relay. Drop or hack him and the crew scatters. His guards can reboot each other.
+    map:
+      width: 16
+      depth: 12
+      seed: 505
+      maxHeight: 3
+      heightStep: 0.5
+      edgeDepth: 3
+      holeChance: 0.06
+      coverChance: 0.07
     objective: 1
     objectiveUnitName: Kingpin
     opponents:
@@ -107,6 +152,15 @@ MonoBehaviour:
       faction: 1
   - missionName: Courier Run
     description: Escort a data courier through hostile turf. If the courier goes down, the contract is void. Survive and they may sign on.
+    map:
+      width: 16
+      depth: 12
+      seed: 606
+      maxHeight: 2
+      heightStep: 0.5
+      edgeDepth: 3
+      holeChance: 0.08
+      coverChance: 0.06
     objective: 2
     objectiveUnitName: Courier
     opponents:

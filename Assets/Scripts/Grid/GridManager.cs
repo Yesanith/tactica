@@ -48,6 +48,8 @@ namespace Tactica.Grid
         [FormerlySerializedAs("HeightStep")]
         [SerializeField] private float heightStep = 1.0f;
 
+        public float HeightStep => heightStep;
+
         [Header("Rendering")]
         [Tooltip("Cube prefab instantiated once per tile. Leave empty to keep the grid data-only.")]
         [FormerlySerializedAs("TilePrefab")]
@@ -120,11 +122,74 @@ namespace Tactica.Grid
         // may change between showing and clearing, so recomputing would not match what is on screen.
         private readonly List<Vector2Int> attackableHighlights = new List<Vector2Int>();
 
+        // Raised after BuildMap or ResetToDefaultMap replaces the board, once the new tiles are
+        // drawn. The camera reframes on it; anything caching tile data should drop it here.
+        public event System.Action GridRebuilt;
+
+        // Highest tile Height on the board. Lets the camera lift its focus for hilly maps.
+        public int MaxTileHeight { get; private set; }
+
+        // Gap between neighbouring tiles as a fraction of tileSize, so each tile reads as its own
+        // square - especially on terraces, where columns would otherwise merge into one slope.
+        private const float TileGapFraction = 0.04f;
+
+        // The scene's authored dimensions, kept so a generated map can be undone.
+        private int defaultWidth;
+        private int defaultDepth;
+        private float defaultHeightStep;
+
         // Awake -> data, Start -> visuals. Every Awake runs before any Start, so other scripts can
         // reshape the grid in their Awake and the visuals will reflect it.
         private void Awake()
         {
+            defaultWidth = gridWidth;
+            defaultDepth = gridDepth;
+            defaultHeightStep = heightStep;
+
             GenerateGrid();
+        }
+
+        // Replaces the board with a generated map and redraws it. The caller must have cleared
+        // units off the old board first - occupancy does not carry over, because the tiles it
+        // pointed at no longer exist.
+        public void BuildMap(MapSettings settings)
+        {
+            if (!settings.IsDefined)
+            {
+                ResetToDefaultMap();
+                return;
+            }
+
+            gridWidth = settings.width;
+            gridDepth = settings.depth;
+            heightStep = settings.heightStep > 0f ? settings.heightStep : defaultHeightStep;
+
+            GridTiles = MapGenerator.Generate(settings);
+            FinishRebuild();
+        }
+
+        // Back to the scene's flat rectangle.
+        public void ResetToDefaultMap()
+        {
+            gridWidth = defaultWidth;
+            gridDepth = defaultDepth;
+            heightStep = defaultHeightStep;
+
+            GenerateGrid();
+            FinishRebuild();
+        }
+
+        private void FinishRebuild()
+        {
+            MaxTileHeight = 0;
+
+            foreach (GridTile tile in GridTiles.Values)
+            {
+                MaxTileHeight = Mathf.Max(MaxTileHeight, tile.Height);
+            }
+
+            RenderGrid();
+            GridRebuilt?.Invoke();
         }
 
         private void Start()
@@ -182,8 +247,15 @@ namespace Tactica.Grid
             {
                 Vector2Int coords = entry.Key;
 
+                // Each tile is a COLUMN from the ground slab up to its surface, so raised terrain
+                // reads as solid ground rather than floating slabs. The surface stays exactly where
+                // it always was (GridToWorldPosition + TileSurfaceOffset), which is what units snap
+                // to - only the bottom of the column moves.
+                float rise = entry.Value.Height * heightStep;
+                Vector3 position = GridToWorldPosition(coords) - new Vector3(0f, rise * 0.5f, 0f);
+
                 // Parenting via the Instantiate argument avoids a redundant transform recalculation.
-                GameObject tileObject = Instantiate(tilePrefab, GridToWorldPosition(coords), Quaternion.identity, transform);
+                GameObject tileObject = Instantiate(tilePrefab, position, Quaternion.identity, transform);
 
                 tileObject.name = $"Tile_{coords.x}_{coords.y}";
 
@@ -194,9 +266,10 @@ namespace Tactica.Grid
                     SetLayerRecursively(tileObject, TileLayer);
                 }
 
-                // Default cube is 1x1x1, so localScale is effectively size in metres. Y is squashed
-                // flat; elevation already came through in GridToWorldPosition via heightStep.
-                tileObject.transform.localScale = new Vector3(tileSize, tileVisualHeight, tileSize);
+                // Default cube is 1x1x1, so localScale is effectively size in metres: a thin slab
+                // plus the column's rise, slightly narrower than tileSize to leave a visible seam.
+                float footprint = tileSize * (1f - TileGapFraction);
+                tileObject.transform.localScale = new Vector3(footprint, tileVisualHeight + rise, footprint);
 
                 spawnedTiles[coords] = tileObject;
                 objectToCoords[tileObject] = coords;
@@ -394,6 +467,41 @@ namespace Tactica.Grid
             {
                 ApplyMaterial(tileObject, material);
             }
+
+            ApplyHeightTint(tileObject, coords, material == baseMaterial);
+        }
+
+        // Low ground dark slate, high ground a pale neon blue. Without it every column renders the
+        // same near-black and terraces, cliffs and cover are unreadable from the tactics camera.
+        private static readonly Color LowGroundColor = new Color(0.08f, 0.09f, 0.13f);
+        private static readonly Color HighGroundColor = new Color(0.28f, 0.42f, 0.58f);
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorId = Shader.PropertyToID("_Color");
+        private MaterialPropertyBlock tintBlock;
+
+        // A property block rather than a material per height: it tints without cloning materials,
+        // and is removed while a highlight shows so the highlight colour reads unchanged.
+        private void ApplyHeightTint(GameObject tileObject, Vector2Int coords, bool tint)
+        {
+            if (!tileObject.TryGetComponent(out Renderer tileRenderer))
+            {
+                return;
+            }
+
+            if (!tint)
+            {
+                tileRenderer.SetPropertyBlock(null);
+                return;
+            }
+
+            int height = GridTiles.TryGetValue(coords, out GridTile tile) ? tile.Height : 0;
+            float t = MaxTileHeight > 0 ? (float)height / MaxTileHeight : 0f;
+            Color color = Color.Lerp(LowGroundColor, HighGroundColor, t);
+
+            tintBlock ??= new MaterialPropertyBlock();
+            tintBlock.SetColor(BaseColorId, color);
+            tintBlock.SetColor(ColorId, color);
+            tileRenderer.SetPropertyBlock(tintBlock);
         }
 
         // Moves the hover highlight to the given tile, or clears it when null.
@@ -582,6 +690,52 @@ namespace Tactica.Grid
             }
 
             return reachable;
+        }
+
+        // Walking distance from `origin` to every tile reachable from it, ignoring occupants.
+        //
+        // For the AI's approach: "how many steps would it take to get there" around holes, cover
+        // and cliffs - which straight-line distance cannot see. Occupants are ignored because units
+        // move between turns; treating them as walls would make a crowd look like a dead end.
+        // Height still applies, with the same symmetric step rule as movement.
+        public Dictionary<Vector2Int, int> GetWalkDistances(Vector2Int origin, int stepLimit)
+        {
+            Dictionary<Vector2Int, int> distances = new Dictionary<Vector2Int, int>();
+
+            if (!GridTiles.ContainsKey(origin))
+            {
+                return distances;
+            }
+
+            distances[origin] = 0;
+            Queue<Vector2Int> frontier = new Queue<Vector2Int>();
+            frontier.Enqueue(origin);
+
+            while (frontier.Count > 0)
+            {
+                Vector2Int current = frontier.Dequeue();
+                int height = GridTiles[current].Height;
+
+                foreach (Vector2Int direction in NeighbourDirections)
+                {
+                    Vector2Int next = current + direction;
+
+                    if (distances.ContainsKey(next) || !GridTiles.TryGetValue(next, out GridTile tile))
+                    {
+                        continue;
+                    }
+
+                    if (!tile.IsWalkable || Mathf.Abs(tile.Height - height) > stepLimit)
+                    {
+                        continue;
+                    }
+
+                    distances[next] = distances[current] + 1;
+                    frontier.Enqueue(next);
+                }
+            }
+
+            return distances;
         }
 
         // Highlights the unit's move range, replacing any previously shown range.

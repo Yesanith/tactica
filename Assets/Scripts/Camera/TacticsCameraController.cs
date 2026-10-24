@@ -75,6 +75,11 @@ namespace Tactica.Camera
         private float snapTargetYaw;
         private float snapElapsed;
 
+        // framingPadding as authored left even a 10x10 board filling well under half the screen,
+        // and the generated maps are wider still. Scaled here rather than re-authored in the scene,
+        // so the serialised value keeps its meaning as a relative tuning knob.
+        private const float FramingScale = 0.7f;
+
         private void Awake()
         {
             ResetFraming();
@@ -86,6 +91,23 @@ namespace Tactica.Camera
         private void Start()
         {
             AutoFrameGrid();
+        }
+
+        // A contract builds its own map, so the board can change size mid-session; reframe then.
+        private void OnEnable()
+        {
+            if (gridManagerRef != null)
+            {
+                gridManagerRef.GridRebuilt += AutoFrameGrid;
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (gridManagerRef != null)
+            {
+                gridManagerRef.GridRebuilt -= AutoFrameGrid;
+            }
         }
 
         private void Update()
@@ -136,9 +158,11 @@ namespace Tactica.Camera
             // Tile *centres* run from 0 to (count-1) * TileSize, so the midpoint is half of that -
             // not count * TileSize / 2, which would sit half a tile past the far edge. Offset by
             // the grid object's own position, exactly as GridToWorldPosition does.
+            // Lifted to half the tallest terrain, so a hilly map is framed on its middle rather than
+            // on its lowest ground.
             Vector3 centre = new Vector3(
                 (width - 1) * tileSize * 0.5f,
-                0f,
+                gridManagerRef.MaxTileHeight * gridManagerRef.HeightStep * 0.5f,
                 (depth - 1) * tileSize * 0.5f) + gridManagerRef.transform.position;
 
             // distance scales with the longer side, so a 20x20 board pulls back twice as far as a
@@ -149,17 +173,15 @@ namespace Tactica.Camera
             // camera's FOV and aspect - roughly (span / 2) / tan(fov / 2), adjusted for pitch.
             // A tunable constant is easier to art-direct and does not break if the FOV changes.
             //
-            // TODO: ignores elevation, which is safe while grids are flat. Once Height varies
-            // significantly, tall terrain near the camera will clip or occlude the board and this
-            // should also factor in the grid's height range (max Height - min Height) * HeightStep,
-            // pulling back further for vertical maps.
-            float longestSpan = Mathf.Max(width, depth) * tileSize;
+            // Elevation adds to the span, so a tall map pulls back a little further.
+            float longestSpan = Mathf.Max(width, depth) * tileSize
+                                + gridManagerRef.MaxTileHeight * gridManagerRef.HeightStep;
 
             pivotPoint = centre;
 
             // Clamped to the zoom limits so auto-framing cannot put the camera somewhere the
             // player could not scroll back to. Large maps may need maxZoomDistance raised.
-            distance = Mathf.Clamp(longestSpan * framingPadding, minZoomDistance, maxZoomDistance);
+            distance = Mathf.Clamp(longestSpan * framingPadding * FramingScale, minZoomDistance, maxZoomDistance);
 
             ApplyTransform();
         }

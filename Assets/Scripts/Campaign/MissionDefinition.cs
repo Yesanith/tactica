@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Tactica.Grid;
 
 namespace Tactica.Campaign
 {
@@ -33,6 +34,9 @@ namespace Tactica.Campaign
 
         [TextArea]
         public string description;
+
+        [Tooltip("The battlefield. Leave width/depth at 0 to fight on the scene's default flat grid.")]
+        public MapSettings map;
 
         public MissionObjective objective = MissionObjective.DefeatAll;
 

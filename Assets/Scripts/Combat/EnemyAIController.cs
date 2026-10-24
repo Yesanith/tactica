@@ -380,11 +380,13 @@ namespace Tactica.Combat
 
             if (nearest != null)
             {
-                // FALLBACK: nothing is attackable this turn, so walk at the closest one anyway.
-                // Greedy - it minimises distance to the target from the tiles available right now,
-                // with no lookahead, so a wall between them will park it against the wall rather
-                // than route around. Real pathing toward an unreachable target is future work.
-                Vector2Int approachFrom = ClosestTileTo(standingTiles, nearest.GridCoords);
+                // FALLBACK: nothing is attackable this turn, so walk toward the nearest one -
+                // measured in WALKING steps from the target (GetWalkDistances), so the unit routes
+                // around holes and cover instead of parking against them. Straight-line distance
+                // only breaks ties, and takes over for tiles the walk cannot reach at all.
+                Dictionary<Vector2Int, int> walk = gridManagerRef.GetWalkDistances(
+                    nearest.GridCoords, aiUnit.EffectiveStats.Jump);
+                Vector2Int approachFrom = ClosestTileTo(standingTiles, nearest.GridCoords, walk);
 
                 return new AITargetDecision(nearest, ability, false, nearestDistance, 0, approachFrom);
             }
@@ -421,15 +423,15 @@ namespace Tactica.Combat
         // integer arithmetic (no sqrt, no float comparison). It is only a tie-break: Manhattan
         // still decides which tile is genuinely closer, because that is the metric movement and
         // range are measured in.
-        private static Vector2Int ClosestTileTo(List<Vector2Int> standingTiles, Vector2Int target)
+        private static Vector2Int ClosestTileTo(List<Vector2Int> standingTiles, Vector2Int target, Dictionary<Vector2Int, int> walk)
         {
             Vector2Int best = standingTiles[0];
-            int bestDistance = GridManager.GetGridDistance(best, target);
+            int bestDistance = WalkOrStraight(best, target, walk);
             int bestSpread = SquaredDistance(best, target);
 
             for (int i = 1; i < standingTiles.Count; i++)
             {
-                int distance = GridManager.GetGridDistance(standingTiles[i], target);
+                int distance = WalkOrStraight(standingTiles[i], target, walk);
                 int spread = SquaredDistance(standingTiles[i], target);
 
                 if (distance < bestDistance || (distance == bestDistance && spread < bestSpread))
@@ -441,6 +443,14 @@ namespace Tactica.Combat
             }
 
             return best;
+        }
+
+        // Walking steps when the tile is connected to the target; otherwise a large penalty plus the
+        // straight-line distance, so any connected tile beats any cut-off one.
+        private static int WalkOrStraight(Vector2Int tile, Vector2Int target, Dictionary<Vector2Int, int> walk)
+        {
+            const int Unreachable = 10000;
+            return walk.TryGetValue(tile, out int steps) ? steps : Unreachable + GridManager.GetGridDistance(tile, target);
         }
 
         private static int SquaredDistance(Vector2Int a, Vector2Int b)

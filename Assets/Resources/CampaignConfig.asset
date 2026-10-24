@@ -1,0 +1,125 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7c3f1a9e5b2d4c6e8f0a1b2c3d4e5f60, type: 3}
+  m_Name: CampaignConfig
+  m_EditorClassIdentifier:
+  startWithMenu: 1
+  startingRoster:
+  - unitName: Aria
+    job: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+    level: 2
+    faction: 0
+  - unitName: Bram
+    job: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+    level: 1
+    faction: 0
+  recruitableJobs:
+  - {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+  - {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+  recruitNames:
+  - Cass
+  - Dax
+  - Elin
+  - Fenn
+  - Gale
+  - Hollis
+  - Ivo
+  - Juno
+  - Kestrel
+  - Lark
+  maxRosterSize: 8
+  maxDeployed: 4
+  recruitPoolSize: 3
+  recruitLevelRange: {x: 1, y: 3}
+  missions:
+  - missionName: Street Sweep
+    description: One ganger on a dead-end block. The quickest full contract loop.
+    opponents:
+    - unitName: Gooner
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 1
+      faction: 1
+  - missionName: Gang Turf
+    description: Three Gooners holding a noodle-bar rooftop. Fast, and they come round often.
+    opponents:
+    - unitName: Gooner A
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 1
+      faction: 1
+    - unitName: Gooner B
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 2
+      faction: 1
+    - unitName: Gooner C
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 1
+      faction: 1
+  - missionName: Block Watch
+    description: Two raiders shaking down a civilian netrunner. Override them to grow the crew.
+    opponents:
+    - unitName: Raider
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 2
+      faction: 1
+    - unitName: Raider 2
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 2
+      faction: 1
+    - unitName: Civilian
+      job: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+      level: 1
+      faction: 2
+  - missionName: Chrome Brute
+    description: One heavily augmented enforcer. Expect to lose someone; reboot them before they flatline.
+    opponents:
+    - unitName: Chrome Brute
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 6
+      faction: 1
+  - missionName: Cut the Signal
+    description: A gang Kingpin runs the block's relay. Drop or hack him and the crew scatters. His guards can reboot each other.
+    objective: 1
+    objectiveUnitName: Kingpin
+    opponents:
+    - unitName: Kingpin
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 4
+      faction: 1
+    - unitName: Guard A
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 3
+      faction: 1
+    - unitName: Guard B
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 3
+      faction: 1
+  - missionName: Courier Run
+    description: Escort a data courier through hostile turf. If the courier goes down, the contract is void. Survive and they may sign on.
+    objective: 2
+    objectiveUnitName: Courier
+    opponents:
+    - unitName: Courier
+      job: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+      level: 1
+      faction: 0
+    - unitName: Raider
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 2
+      faction: 1
+    - unitName: Raider 2
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 2
+      faction: 1
+    - unitName: Raider 3
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 1
+      faction: 1

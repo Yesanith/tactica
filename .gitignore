@@ -151,3 +151,9 @@ secrets.json
 # Android signing material. Leaking these lets someone ship as you.
 *.keystore
 *.jks
+
+# Restored automatically by the Unity-MCP package (its NuGet dependency resolver),
+# so the 18 MB of DLLs are not tracked.
+/[Aa]ssets/Plugins/NuGet/
+/[Aa]ssets/Plugins/NuGet.meta
+/[Aa]ssets/Plugins.meta

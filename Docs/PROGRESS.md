@@ -222,6 +222,21 @@ of the cheaper CT cost for now — flagged in ARCHITECTURE.md as a double reward
 *Decisions:* objectives only ever end a fight early; the side-is-down end condition still holds for
 every mission. Facing is automatic for now — FFT's end-of-turn facing choice is the next UI step.
 
+**Guests and generated maps (2026-10-25).**
+
+- *Side and control split,* FFT's guest model: a unit's faction decides who it may hit and who
+  wins; `IsPlayerControlled` (Player side, not a guest) decides who gives it orders. The Courier and
+  the Civilian are now AI-driven guests; losing a guest is a Protect objective, and guests do not
+  hold the Player side up. Block Watch became a Protect contract.
+- *Neutral is now a deliberate third party* hostile to everyone, unused by current contracts. The
+  relationship table it would have needed is unnecessary with guests.
+- *Generated maps per contract:* wider boards (12x10 to 16x12) with terraces, ragged edges, holes and
+  raised cover, from a seed. Tiles render as height-tinted columns; the camera reframes per map.
+- *Movement retuned for the bigger boards:* Cyber Knight Move 3, Gooner Move 2 and Jump 2 (they can
+  climb cover; knights cannot).
+- *AI approach uses walking distance,* so it routes around holes and cover instead of stalling
+  against them.
+
 **FFT research.** [FFT_DESIGN_NOTES.md](FFT_DESIGN_NOTES.md) records how Final Fantasy Tactics'
 systems work, with numbers from the Battle Mechanics Guide, why each works, and a prioritised list
 of what fits Tactica — one action per turn and a CT turn system first.

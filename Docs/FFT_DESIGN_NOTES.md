@@ -347,7 +347,11 @@ için riske gireyim mi?" kararı verir. Kalıcı kayıp, roster'a duygusal ağı
 > İkinci tur: 5 (**facing + evasion**: önden tam, yandan yarım, arkadan sıfır; neon vizör yönü
 > gösteriyor), 6 (**Manhattan** hareket/menzil + birim başına **Jump**), 9 (**görev hedefleri**:
 > Neutralize ve Protect; yeni kontratlar Cut the Signal, Courier Run). AI artık düşen müttefikini
-> Reboot ediyor. Sırada: 7 (JP ve yetenek slotları), elle yön seçimi, Brave/Faith.
+> Reboot ediyor.
+> Üçüncü tur: FFT'nin **guest** modeli (taraf ve kontrol ayrı; Civilian ve Courier AI kontrollü
+> müttefik), Neutral yalnızca herkese düşman üçüncü taraflar için. Kontrat başına **üretilen
+> haritalar**: teraslar, girintili kenarlar, delikler, Jump'a göre tırmanılabilen siperler.
+> Sırada: 7 (JP ve yetenek slotları), elle yön seçimi, Brave/Faith.
 
 | # | Özellik | Neden | Nereye dokunur |
 |---|---|---|---|

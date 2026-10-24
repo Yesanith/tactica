@@ -8,7 +8,7 @@
 > Scope: **what exists today.** Not a roadmap, not a task list. Known limitations are recorded
 > because they are current facts about the code, not because they are planned work.
 
-Last verified against a clean compile of all 37 scripts (7,629 lines; 4,896 excluding comments and
+Last verified against a clean compile of all 39 scripts (8,201 lines; 5,293 excluding comments and
 blanks).
 
 ---
@@ -84,9 +84,15 @@ Values are **pinned**: Unity serializes an enum as its underlying int, so reorde
 silently reassigns every authored unit with no diff to notice. It lives in `Grid` because `GridUnit`
 owns it and both `Combat` and `UI` already depend on `Grid` — no new namespace edge.
 
-`Neutral` is deliberately unused today. Recruitable-but-not-yet-recruited units, quest NPCs and
-summons all need it, and adding an enum member later is free while migrating serialized data twice
-is not.
+**Side and control are separate**, as in FFT. `Faction` says which side a unit is on (targeting,
+victory); `GridUnit.IsPlayerControlled` — Player faction **and not a guest** — says who gives it
+orders. A **guest** (`isGuest`, set from `UnitEntry.guest`) is on the Player side but driven by
+`EnemyAIController`: escorts and civilians. Derived rather than stored, so a unit hacked onto the
+Player side with Override takes orders at once.
+
+`Neutral` is reserved for genuine **third parties hostile to everyone** (rogue drones, a feral AI).
+No contract uses it now; civilians are guests. That split is why there is no faction relationship
+table.
 
 **`GridManager.GridTiles`** is a `Dictionary<Vector2Int, GridTile>`, not a 2D array. The dictionary
 costs a hash per lookup and loses cache locality; it buys sparse/irregular maps, negative
@@ -113,11 +119,40 @@ GridTiles[coords] = tile;   // ...so it must be written back
   stop being inverses.
 - `TileSurfaceOffset` — half the tile's visual thickness; where things stand.
 
+### Generated maps — `MapSettings`, `MapGenerator`, `BuildMap`
+
+Each contract carries a `MapSettings` (width, depth, seed, maxHeight, heightStep, edgeDepth,
+holeChance, coverChance); `MissionRunner` calls `GridManager.BuildMap(settings)` before spawning.
+Same seed, same map. Undefined settings (width or depth 0) fall back to `ResetToDefaultMap()`, the
+scene's flat rectangle.
+
+`MapGenerator.Generate` runs five passes, in this order on purpose:
+
+1. **Heights** — Perlin noise quantised into terraces, then relaxed (lowering only, so it
+   terminates) until no neighbours differ by more than 1. Any Jump 1 unit can cross the terrain.
+2. **Outline** — noise-driven bites out of the sides (up to `edgeDepth`), at most 1 out of the two
+   deployment edges.
+3. **Holes** — random interior gaps, never in the two spawn rows at each end.
+4. **Connectivity** — everything a Jump 1 unit cannot reach from the middle of the player's edge is
+   removed, so every tile left is playable.
+5. **Cover** — blocks raised by 2, placed last so they cannot disconnect the map: only where all
+   four neighbours exist and are not cover. Too tall for Jump 1 (Cyber Knights); Gooners have Jump 2.
+
+A result keeping under 55% of the rectangle, or fewer than 4 tiles on either deployment edge, is
+rejected and the next seed tried (up to 6). `GridRebuilt` fires afterwards; the camera reframes on
+it, lifting its focus by half the tallest terrain.
+
 ### Rendering
 
-`RenderGrid()` instantiates one `tilePrefab` per tile, named `Tile_x_y`, scaled
-`(tileSize, tileVisualHeight, tileSize)`, assigned to the **`Tiles` layer** (index 3 in
-`TagManager.asset`).
+`RenderGrid()` instantiates one `tilePrefab` per tile, named `Tile_x_y`, as a **column** from the
+ground slab up to the tile's surface — scaled `(tileSize × 0.96, tileVisualHeight + Height × heightStep,
+tileSize × 0.96)` and lowered by half its rise, so the surface stays exactly where units snap and the
+4% gap draws a seam between tiles. Assigned to the **`Tiles` layer** (index 3 in `TagManager.asset`).
+
+**Height tint.** Unhighlighted tiles get a `MaterialPropertyBlock` colour from dark slate (low) to
+pale neon blue (high), relative to `MaxTileHeight` — without it every column rendered near-black and
+terraces were unreadable. The block is removed while a highlight shows, so highlight materials read
+unchanged, and no materials are cloned.
 
 One GameObject per tile is fine at this scale and buys raycast picking for free.
 `Graphics.RenderMeshInstanced` would be the alternative at ~10,000 tiles; the swap is local to this
@@ -258,7 +293,8 @@ units** — standing one up without clearing the counter would leave a deadline 
 unit.
 
 **Faction.** `GridUnit` owns the unit's `Faction` via a serialized field, exposed as
-`CurrentFaction` with `SetFaction(newFaction)` for recruitment to call. `SetFaction` refreshes the
+`CurrentFaction` with `SetFaction(newFaction)` for recruitment to call (`IsGuest` /
+`IsPlayerControlled` above decide who drives it). `SetFaction` refreshes the
 status bar (the only thing that caches a faction-derived value) and logs the change. It does **not**
 rebuild turn order — initiative is a snapshot, so a unit switching sides mid-encounter keeps its
 slot and simply fights for the other team from its next turn.
@@ -458,6 +494,10 @@ read "never had any enemies" and leave combat `Ongoing` forever. Before `StartCo
 is all false, so the live roster decides, as it always did. Mutual wipeout resolves to `PlayerDefeat`; the check order
 is the only thing deciding that.
 
+**Guests count for neither side either.** As in FFT, the fight is lost when the player's own units
+are down even if an escort still stands; losing the guest is a `Protect` objective, not an end
+condition. `encounterHadPlayers` excludes guests for the same reason.
+
 **`Faction.Neutral` counts for neither side.** A surviving neutral does not keep a won encounter
 open, and wiping out every neutral wins nothing — otherwise a wandering critter could stall a
 cleared map indefinitely. "Keep the merchant alive" is a *mission objective*, evaluated above this;
@@ -530,7 +570,8 @@ moving these removed duplication rather than relocating it.
 | `HandleTileClicked(coords)` | subscribed to `GridCursorHighlighter.TileClicked`; routes by mode |
 | `HandleActiveUnitChanged(unit)` | event handler; cancels targeting, resets `Mode` to `None`, clears the outgoing range, draws nothing |
 
-**Only Player-faction units take orders.** `GetActionableUnit` and `Wait` refuse any other faction.
+**Only player-controlled units take orders** (`IsPlayerControlled`: Player side, not a guest).
+`GetActionableUnit` and `Wait` refuse anyone else.
 Before this gate the HUD drove whichever unit held the turn — Move during an AI turn walked the
 enemy, and Wait ended the AI's turn with a stance nobody chose. `EnemyAIController` applies the
 mirror-image gate, so every faction has exactly one driver. `CombatHUD` additionally greys the three
@@ -632,9 +673,9 @@ after `StartCombat`, which catches damage, knockouts and faction changes from an
 `TryEndCombatNow` also uses. This can fire mid-resolution (a knockout raises `StatsChanged` inside
 `ApplyDamage`); the controllers' own `TryEndCombatNow` afterwards simply sees combat already over.
 
-An opponent entry with faction **Player** is a **guest** (the Courier): it fights on the crew's side
-under player control, is not in the roster, and — having ended on the Player side — can be recruited
-afterwards.
+An opponent entry with faction **Player** and `guest: 1` is a **guest** (the Courier, the Civilian):
+it fights on the crew's side under **AI control**, is not in the roster, and — having ended on the
+Player side — can be recruited afterwards.
 
 ## UI — `Assets/Scripts/UI/`
 

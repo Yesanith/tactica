@@ -490,6 +490,12 @@ namespace Tactica.Combat
 
                 switch (unit.CurrentFaction)
                 {
+                    // Guests are on the Player side but do not hold it: as in FFT, the fight is lost
+                    // when the player's own units are down, even with an escort still standing.
+                    // Losing a guest is a mission objective (Protect), not an end condition.
+                    case Faction.Player when unit.IsGuest:
+                        break;
+
                     case Faction.Player:
                         hasPlayerUnits = true;
                         anyPlayerStanding |= !unit.IsKnockedOut;
@@ -551,7 +557,7 @@ namespace Tactica.Combat
 
         private void SnapshotStartingSides()
         {
-            encounterHadPlayers = initiativeOrder.Any(unit => unit.CurrentFaction == Faction.Player);
+            encounterHadPlayers = initiativeOrder.Any(unit => unit.CurrentFaction == Faction.Player && !unit.IsGuest);
             encounterHadEnemies = initiativeOrder.Any(unit => unit.CurrentFaction == Faction.Enemy);
         }
 

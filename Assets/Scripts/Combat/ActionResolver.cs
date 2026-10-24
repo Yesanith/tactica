@@ -59,17 +59,13 @@ namespace Tactica.Combat
         // TargetsAllies is now reachable - an ally-only heal finds its target. Under the old
         // everyone-is-an-enemy placeholder it could hit nobody but the caster.
         //
-        // NEUTRAL IS PROVISIONALLY HOSTILE TO EVERYONE, and that is a decision worth flagging
-        // rather than burying. "Different faction" is the only rule here, so a Neutral is a legal
-        // target for both Player and Enemy, and can be targeted by either. That is right for wild
-        // creatures and wrong for the case Neutral mainly exists to serve - a recruitable villager
-        // the player should not be able to cut down by default.
+        // NEUTRAL IS HOSTILE TO EVERYONE, on purpose. "Different faction" is the only rule, so a
+        // Neutral is a legal target for both sides and targets both. Neutral is for genuine third
+        // parties - rogue drones, a feral AI - which is exactly that behaviour.
         //
-        // The real answer is a relationship table (or at least a hostile-to set per faction),
-        // because hostility is not symmetric in general: bandits attack villagers, villagers do
-        // not attack the player. That lands with recruitment, when there is finally something to
-        // test it against. Until then every unit in an encounter is Player or Enemy, so nothing
-        // exercises this path.
+        // Civilians and escorts are NOT Neutral: they are guests (GridUnit.IsGuest), on the Player
+        // side and driven by the AI, as in FFT. That split is why no faction relationship table is
+        // needed - "who may hit the civilian" is answered by the civilian being on your side.
         public bool IsValidTarget(GridUnit user, GridUnit target, AbilityDefinition ability)
         {
             if (user == null || target == null || ability == null)

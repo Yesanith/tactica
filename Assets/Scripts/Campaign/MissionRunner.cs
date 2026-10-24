@@ -121,7 +121,7 @@ namespace Tactica.Campaign
 
             foreach (UnitEntry entry in mission.opponents)
             {
-                Spawn(entry.unitName, entry.job, entry.level, entry.faction);
+                Spawn(entry.unitName, entry.job, entry.level, entry.faction, entry.guest);
             }
 
             if (spawnedUnits.Count == 0)
@@ -301,7 +301,7 @@ namespace Tactica.Campaign
         // Built inactive and configured before activation, so GridUnit.Awake computes stats from
         // the right job and level on its one and only run. Activating first would initialise from
         // an empty job, log a warning, and then need a second, full-heal initialisation.
-        private GridUnit Spawn(string unitName, JobDefinition job, int level, Faction faction)
+        private GridUnit Spawn(string unitName, JobDefinition job, int level, Faction faction, bool guest = false)
         {
             if (job == null)
             {
@@ -321,7 +321,7 @@ namespace Tactica.Campaign
             unitObject.SetActive(false);
 
             GridUnit unit = unitObject.AddComponent<GridUnit>();
-            unit.Configure(unitName, job, level, faction, coords);
+            unit.Configure(unitName, job, level, faction, coords, guest);
             unitObject.name = $"{unit.DisplayName} ({faction})";
 
             // Each side starts looking across the board at the other. Neutrals face the player's

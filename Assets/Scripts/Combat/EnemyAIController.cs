@@ -100,7 +100,7 @@ namespace Tactica.Combat
             // a turn still has to do something with it, and "run the same evaluation" is a better
             // default than standing frozen. What it *decides* comes from IsValidTarget, so if
             // neutrals stop being hostile to everyone this needs no change.
-            if (unit.CurrentFaction == Faction.Player)
+            if (unit.IsPlayerControlled)
             {
                 return;
             }

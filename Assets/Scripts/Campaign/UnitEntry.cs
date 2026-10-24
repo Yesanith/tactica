@@ -20,5 +20,9 @@ namespace Tactica.Campaign
 
         [Tooltip("Side this unit starts on. Ignored for the starting roster.")]
         public Faction faction = Faction.Enemy;
+
+        [Tooltip("AI-driven even on the Player side - an escort or civilian, FFT's guest. Ignored " +
+                 "for the starting roster.")]
+        public bool guest;
     }
 }

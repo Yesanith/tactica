@@ -157,7 +157,7 @@ namespace Tactica.Combat
         {
             GridUnit unit = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
 
-            if (unit == null || unit.CurrentFaction != Faction.Player || unit.CurrentJob == null)
+            if (unit == null || !unit.IsPlayerControlled || unit.CurrentJob == null)
             {
                 return new List<AbilityDefinition>();
             }
@@ -251,7 +251,7 @@ namespace Tactica.Combat
 
             // Same ownership gate as GetActionableUnit. Without it, pressing Wait during an AI turn
             // ended that turn for the AI - and handed it a defensive stance nobody chose.
-            if (unit == null || unit.CurrentFaction != Faction.Player)
+            if (unit == null || !unit.IsPlayerControlled)
             {
                 Debug.Log($"{nameof(PlayerActionController)}: not a player unit's turn - Wait ignored.", this);
                 return;
@@ -484,10 +484,10 @@ namespace Tactica.Combat
 
             GridUnit unit = combatManagerRef.GetActiveUnit();
 
-            // Only units on the Player side take orders from here. Without this gate the HUD drove
-            // whichever unit held the turn - press Move during an AI turn and the player walked the
-            // enemy around. EnemyAIController handles every other faction.
-            if (unit == null || unit.CurrentFaction != Faction.Player)
+            // Only player-controlled units take orders from here - Player side, not a guest. Without
+            // this gate the HUD drove whichever unit held the turn - press Move during an AI turn
+            // and the player walked the enemy around. EnemyAIController drives everyone else.
+            if (unit == null || !unit.IsPlayerControlled)
             {
                 Debug.Log($"{nameof(PlayerActionController)}: input ignored, not a player unit's turn.", this);
                 return null;

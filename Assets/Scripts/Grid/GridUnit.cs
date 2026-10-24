@@ -45,6 +45,10 @@ namespace Tactica.Grid
                  "colour.")]
         [SerializeField] private Faction faction = Faction.Player;
 
+        [Tooltip("A guest fights for its faction but is driven by the AI, not the player - FFT's " +
+                 "escorted guests. Guests do not count toward winning or losing.")]
+        [SerializeField] private bool isGuest;
+
         [Tooltip("Which way the unit looks. Attacks from behind ignore its evasion; from the side " +
                  "they halve it. Turns automatically when the unit moves or acts.")]
         [SerializeField] private Facing facing = Facing.North;
@@ -96,9 +100,10 @@ namespace Tactica.Grid
         // configured job and level, exactly as it would for an authored unit. Called on a unit
         // that is already live it re-initialises from scratch - full pools - because this is a
         // spawn, not a level-up.
-        public void Configure(string newDisplayName, JobDefinition job, int newLevel, Faction newFaction, Vector2Int coords)
+        public void Configure(string newDisplayName, JobDefinition job, int newLevel, Faction newFaction, Vector2Int coords, bool guest = false)
         {
             displayName = newDisplayName;
+            isGuest = guest;
             currentJob = job;
             level = Mathf.Max(1, newLevel);
             faction = newFaction;
@@ -114,6 +119,14 @@ namespace Tactica.Grid
         public Faction CurrentFaction => faction;
 
         public Facing CurrentFacing => facing;
+
+        public bool IsGuest => isGuest;
+
+        // Who gives this unit its orders - separate from which side it is on. FFT splits the two:
+        // a guest is on your side but the AI drives it. Derived, not stored, so a unit hacked onto
+        // the Player side with Override immediately takes orders, and a crew member turned Enemy
+        // immediately does not.
+        public bool IsPlayerControlled => faction == Faction.Player && !isGuest;
 
         // Turns the unit and its model. The transform is rotated about Y only, so a child visor or
         // weapon on the model's +Z side shows the facing; the status bar billboards separately.

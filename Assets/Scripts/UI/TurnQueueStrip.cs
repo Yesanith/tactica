@@ -112,7 +112,8 @@ namespace Tactica.UI
                 }
                 else
                 {
-                    row.text = $"{marker}{unit.DisplayName}";
+                    string guest = unit.IsGuest ? "  (guest)" : string.Empty;
+                    row.text = $"{marker}{unit.DisplayName}{guest}";
                     row.color = ColorFor(unit.CurrentFaction);
                 }
             }

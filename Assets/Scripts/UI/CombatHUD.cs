@@ -201,7 +201,7 @@ namespace Tactica.UI
 
             // Greyed out on anyone else's turn. PlayerActionController refuses those presses
             // anyway - this is so the buttons do not look clickable while the AI acts.
-            SetActionButtonsInteractable(unit != null && unit.CurrentFaction == Faction.Player);
+            SetActionButtonsInteractable(unit != null && unit.IsPlayerControlled);
 
             // A new turn means the previous turn's target is no longer meaningful.
             HideTargetPanel();

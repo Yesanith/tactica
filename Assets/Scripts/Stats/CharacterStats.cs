@@ -22,12 +22,16 @@ namespace Tactica.Stats
         // Tiles per turn. Read by GridManager's move-range flood fill.
         public int Move;
 
-        // Max height difference this unit can traverse in one step. GetTilesInMoveRange accepts
-        // this as an optional override; nothing passes it yet, so the grid-wide MaxStepHeight
-        // still applies.
+        // Max height difference this unit can traverse in one step. Passed to
+        // GridManager.GetTilesInMoveRange for every move-range query.
         public int Jump;
 
-        public CharacterStats(int maxHP, int maxMP, int strength, int magic, int defense, int speed, int move, int jump)
+        // Chance, in percent, to dodge a physical attack from the FRONT. Halved from the side and
+        // ignored from behind - FFT's facing rule, simplified to one number. Magic-like effects
+        // (Override, Reboot) ignore it.
+        public int Evasion;
+
+        public CharacterStats(int maxHP, int maxMP, int strength, int magic, int defense, int speed, int move, int jump, int evasion = 0)
         {
             MaxHP = maxHP;
             MaxMP = maxMP;
@@ -37,6 +41,7 @@ namespace Tactica.Stats
             Speed = speed;
             Move = move;
             Jump = jump;
+            Evasion = evasion;
         }
 
         // Component-wise. Negative fields are debuffs, so subtraction is just adding a negative.
@@ -61,6 +66,7 @@ namespace Tactica.Stats
                 Speed = a.Speed + b.Speed,
                 Move = a.Move + b.Move,
                 Jump = a.Jump + b.Jump,
+                Evasion = a.Evasion + b.Evasion,
             };
         }
 
@@ -82,12 +88,13 @@ namespace Tactica.Stats
                 Speed = stats.Speed * multiplier,
                 Move = stats.Move * multiplier,
                 Jump = stats.Jump * multiplier,
+                Evasion = stats.Evasion * multiplier,
             };
         }
 
         public override string ToString()
         {
-            return $"HP {MaxHP} MP {MaxMP} | STR {Strength} MAG {Magic} DEF {Defense} SPD {Speed} | Move {Move} Jump {Jump}";
+            return $"HP {MaxHP} MP {MaxMP} | STR {Strength} MAG {Magic} DEF {Defense} SPD {Speed} | Move {Move} Jump {Jump} EV {Evasion}";
         }
     }
 }

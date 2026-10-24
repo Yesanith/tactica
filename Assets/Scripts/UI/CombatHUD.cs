@@ -1,7 +1,10 @@
+using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using Tactica.Combat;
 using Tactica.Grid;
+using Tactica.Stats;
 
 namespace Tactica.UI
 {
@@ -35,11 +38,55 @@ namespace Tactica.UI
         // (the defensive stance), which is the distinction the two buttons never had.
         [SerializeField] private Button waitButton;
 
+        // Whose bar currently shows the turn triangle, so it can be switched off when the turn
+        // moves on. Unity's null check covers a unit destroyed since - e.g. a mission torn down.
+        private GridUnit indicatedUnit;
+
+        // Built in code at Awake, on this HUD's own canvas: the Act menu (one button per unlocked
+        // ability), the targeting preview line, and the CT turn queue. Code-built so the authored
+        // HUD prefab did not need to change.
+        private RectTransform abilityMenu;
+        private TextMeshProUGUI previewLabel;
+        private GridCursorHighlighter cursor;
+
         private void Awake()
         {
             // Hidden by default. Done in Awake rather than relying on the prefab being saved
             // deactivated, so the panel state is guaranteed regardless of how the scene was left.
             HideTargetPanel();
+
+            cursor = FindAnyObjectByType<GridCursorHighlighter>();
+
+            BuildAbilityMenu();
+            BuildPreviewLabel();
+            TurnQueueStrip.Create(transform, combatManagerRef);
+
+            // FFT's command is "Act", not "Attack": the menu behind it holds hacks and reboots too.
+            SetButtonLabel(attackButton, "Act");
+        }
+
+        // The targeting preview follows the cursor, so it is polled rather than evented - the
+        // hovered tile changes with the camera as well as the mouse.
+        private void Update()
+        {
+            if (previewLabel == null)
+            {
+                return;
+            }
+
+            string preview = null;
+
+            if (actionController != null && cursor != null && cursor.HoveredTile.HasValue)
+            {
+                preview = actionController.DescribeTargetPreview(cursor.HoveredTile.Value);
+            }
+
+            previewLabel.transform.parent.gameObject.SetActive(!string.IsNullOrEmpty(preview));
+
+            if (!string.IsNullOrEmpty(preview))
+            {
+                previewLabel.text = preview;
+            }
         }
 
         // OnEnable/OnDisable for both the combat event and the button callbacks. Button listeners
@@ -83,6 +130,9 @@ namespace Tactica.UI
             if (attackButton != null) attackButton.onClick.RemoveListener(OnAttackPressed);
             if (moveButton != null) moveButton.onClick.RemoveListener(OnMovePressed);
             if (waitButton != null) waitButton.onClick.RemoveListener(OnWaitPressed);
+
+            // Stops following turns, so must not leave a stale triangle behind.
+            SetTurnIndicator(null);
         }
 
         private void Start()
@@ -146,8 +196,49 @@ namespace Tactica.UI
                 activeUnitPanel.gameObject.SetActive(unit != null);
             }
 
+            SetTurnIndicator(unit);
+            CloseAbilityMenu();
+
+            // Greyed out on anyone else's turn. PlayerActionController refuses those presses
+            // anyway - this is so the buttons do not look clickable while the AI acts.
+            SetActionButtonsInteractable(unit != null && unit.CurrentFaction == Faction.Player);
+
             // A new turn means the previous turn's target is no longer meaningful.
             HideTargetPanel();
+        }
+
+        private void SetActionButtonsInteractable(bool interactable)
+        {
+            if (attackButton != null) attackButton.interactable = interactable;
+            if (moveButton != null) moveButton.interactable = interactable;
+            if (waitButton != null) waitButton.interactable = interactable;
+        }
+
+        // Moves the triangle from the previous turn holder's bar to this unit's. Null clears it -
+        // combat ending passes null, and no one should look like they are still acting.
+        private void SetTurnIndicator(GridUnit unit)
+        {
+            if (indicatedUnit != null && indicatedUnit != unit)
+            {
+                UnitStatusBar previousBar = indicatedUnit.GetComponent<UnitStatusBar>();
+
+                if (previousBar != null)
+                {
+                    previousBar.SetTurnIndicator(false);
+                }
+            }
+
+            indicatedUnit = unit;
+
+            if (unit != null)
+            {
+                UnitStatusBar bar = unit.GetComponent<UnitStatusBar>();
+
+                if (bar != null)
+                {
+                    bar.SetTurnIndicator(true);
+                }
+            }
         }
 
         // Refresh whatever is on screen, not just the active panel: an attack changes the target's
@@ -166,10 +257,119 @@ namespace Tactica.UI
         // The HUD says what was pressed; PlayerActionController decides what that does. Keeping
         // the rules out of the button handlers means the same actions can later be driven by a
         // keyboard shortcut or an AI without duplicating any of this.
+        // Act opens the ability list rather than acting directly; pressing it again closes it.
         private void OnAttackPressed()
         {
-            if (actionController != null) actionController.BeginAttack();
-            else Debug.LogWarning($"{nameof(CombatHUD)}: no {nameof(actionController)} assigned.", this);
+            if (actionController == null)
+            {
+                Debug.LogWarning($"{nameof(CombatHUD)}: no {nameof(actionController)} assigned.", this);
+                return;
+            }
+
+            if (abilityMenu.gameObject.activeSelf)
+            {
+                CloseAbilityMenu();
+                return;
+            }
+
+            OpenAbilityMenu();
+        }
+
+        private void OpenAbilityMenu()
+        {
+            MenuBuilder.Clear(abilityMenu);
+
+            GridUnit unit = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
+            List<AbilityDefinition> abilities = actionController.GetAvailableAbilities();
+
+            if (unit == null || abilities.Count == 0)
+            {
+                MenuBuilder.AddText(abilityMenu, "No abilities.", 18f, TextAlignmentOptions.Left, 28f);
+            }
+            else if (unit.HasActedThisTurn)
+            {
+                MenuBuilder.AddText(abilityMenu, "Already acted this turn.", 18f, TextAlignmentOptions.Left, 28f);
+            }
+
+            foreach (AbilityDefinition ability in abilities)
+            {
+                bool affordable = unit != null && unit.CurrentStats.MP >= ability.MPCost;
+                bool usable = affordable && unit != null && !unit.HasActedThisTurn;
+                string cost = ability.MPCost > 0 ? $"  {ability.MPCost} MP" : string.Empty;
+
+                MenuBuilder.AddButton(abilityMenu, $"{ability.AbilityName}{cost}", () =>
+                {
+                    CloseAbilityMenu();
+                    actionController.BeginAttack(ability);
+                }, -1f, 40f, usable);
+            }
+
+            abilityMenu.gameObject.SetActive(true);
+        }
+
+        private void CloseAbilityMenu()
+        {
+            if (abilityMenu != null)
+            {
+                abilityMenu.gameObject.SetActive(false);
+            }
+        }
+
+        // Above the action buttons, bottom-right. Anchored to the canvas rather than the Act
+        // button, so it works however the authored button panel is laid out.
+        private void BuildAbilityMenu()
+        {
+            abilityMenu = MenuBuilder.CreateRect(transform, "AbilityMenu");
+            abilityMenu.anchorMin = abilityMenu.anchorMax = new Vector2(1f, 0f);
+            abilityMenu.pivot = new Vector2(1f, 0f);
+            abilityMenu.anchoredPosition = new Vector2(-16f, 140f);
+            abilityMenu.sizeDelta = new Vector2(300f, 0f);
+
+            abilityMenu.gameObject.AddComponent<Image>().color = new Color(0.02f, 0.02f, 0.06f, 0.9f);
+            MenuBuilder.AddVerticalLayout(abilityMenu.gameObject, 4f, 8);
+            abilityMenu.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            abilityMenu.gameObject.SetActive(false);
+        }
+
+        // Top-centre: what the pending ability would do to the hovered target.
+        private void BuildPreviewLabel()
+        {
+            RectTransform box = MenuBuilder.CreateRect(transform, "TargetPreview");
+            box.anchorMin = box.anchorMax = new Vector2(0.5f, 1f);
+            box.pivot = new Vector2(0.5f, 1f);
+            box.anchoredPosition = new Vector2(0f, -16f);
+            box.sizeDelta = new Vector2(640f, 44f);
+
+            Image background = box.gameObject.AddComponent<Image>();
+            background.color = new Color(0.02f, 0.02f, 0.06f, 0.85f);
+            background.raycastTarget = false;
+
+            RectTransform labelRect = MenuBuilder.CreateRect(box, "Label");
+            MenuBuilder.Stretch(labelRect);
+
+            previewLabel = labelRect.gameObject.AddComponent<TextMeshProUGUI>();
+            previewLabel.fontSize = 22f;
+            previewLabel.alignment = TextAlignmentOptions.Center;
+            previewLabel.color = new Color(0.3f, 0.95f, 0.95f);
+            previewLabel.raycastTarget = false;
+
+            box.gameObject.SetActive(false);
+        }
+
+        private static void SetButtonLabel(Button button, string label)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            TMP_Text text = button.GetComponentInChildren<TMP_Text>();
+
+            if (text != null)
+            {
+                text.text = label;
+            }
         }
 
         private void OnMovePressed()

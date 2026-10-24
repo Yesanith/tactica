@@ -22,9 +22,23 @@ namespace Tactica.Combat
         // which is cheap and cannot go out of sync with a more precise payload.
         public event Action OnStatsChanged;
 
-        // Distance is Chebyshev (8-directional) steps, ignoring terrain and obstacles - a
-        // diagonal neighbour is range 1, same as an orthogonal one. See
-        // GridManager.GetGridDistance for why the move-range flood fill is the wrong tool here.
+        // Override can never be a sure thing nor a lost cause: a 100% hack would make every enemy a
+        // future recruit, and a 0% one is a button that only wastes MP.
+        public const int MinOverrideChance = 5;
+        public const int MaxOverrideChance = 95;
+
+        // Seedable so a test can pin the Override roll. Owned here rather than using
+        // UnityEngine.Random, which would tie the resolver to engine state it otherwise never needs.
+        private readonly System.Random random;
+
+        public ActionResolver(int? seed = null)
+        {
+            random = seed.HasValue ? new System.Random(seed.Value) : new System.Random();
+        }
+
+        // Distance is Manhattan (orthogonal) steps, ignoring terrain and obstacles - the same
+        // metric movement uses. See GridManager.GetGridDistance for why the move-range flood fill
+        // is still the wrong tool here.
         // Range 0 means self-only, since only the user is at distance 0 from itself.
         public bool IsTargetInRange(GridUnit user, GridUnit target, AbilityDefinition ability)
         {
@@ -38,16 +52,24 @@ namespace Tactica.Combat
 
         // Checks the ability's targeting flags against the user/target relationship.
         //
-        // PLACEHOLDER: there is no faction or team data yet, so every unit that is not the user is
-        // treated as an enemy. Two consequences worth knowing before authoring abilities:
-        //   - TargetsAllies is currently unreachable. An ability with TargetsAllies but not
-        //     TargetsEnemies can only ever hit the user (and only if TargetsSelf is also set), so
-        //     ally-only heals cannot be tested until factions exist.
-        //   - Nothing stops an area heal from mending the enemy it was aimed past.
+        // Three cases, in order: the unit itself, someone on its own side, someone on another.
+        // Self is tested first because a unit shares its own faction, so without that check
+        // TargetsAllies alone would make every ability self-targetable.
         //
-        // Real faction checking is the near-term fix: a Faction field on GridUnit (or an owning
-        // team reference), with this method comparing user and target factions. Everything else
-        // here stays as-is; only this relationship test changes.
+        // TargetsAllies is now reachable - an ally-only heal finds its target. Under the old
+        // everyone-is-an-enemy placeholder it could hit nobody but the caster.
+        //
+        // NEUTRAL IS PROVISIONALLY HOSTILE TO EVERYONE, and that is a decision worth flagging
+        // rather than burying. "Different faction" is the only rule here, so a Neutral is a legal
+        // target for both Player and Enemy, and can be targeted by either. That is right for wild
+        // creatures and wrong for the case Neutral mainly exists to serve - a recruitable villager
+        // the player should not be able to cut down by default.
+        //
+        // The real answer is a relationship table (or at least a hostile-to set per faction),
+        // because hostility is not symmetric in general: bandits attack villagers, villagers do
+        // not attack the player. That lands with recruitment, when there is finally something to
+        // test it against. Until then every unit in an encounter is Player or Enemy, so nothing
+        // exercises this path.
         public bool IsValidTarget(GridUnit user, GridUnit target, AbilityDefinition ability)
         {
             if (user == null || target == null || ability == null)
@@ -55,9 +77,29 @@ namespace Tactica.Combat
                 return false;
             }
 
+            // Flatlined units are off the board. Otherwise the knocked out are valid ONLY for
+            // Revive, and Revive is valid only for them - this is the single place that rule lives,
+            // so the player's highlight, the AI's search and execution all agree.
+            if (target.IsFlatlined)
+            {
+                return false;
+            }
+
+            bool wantsDowned = ability.EffectType == AbilityEffectType.Revive;
+
+            if (target.IsKnockedOut != wantsDowned)
+            {
+                return false;
+            }
+
             if (user == target)
             {
                 return ability.TargetsSelf;
+            }
+
+            if (user.CurrentFaction == target.CurrentFaction)
+            {
+                return ability.TargetsAllies;
             }
 
             return ability.TargetsEnemies;
@@ -93,6 +135,102 @@ namespace Tactica.Combat
             return Mathf.Max(1, raw);
         }
 
+        // Where the user would strike the target from, relative to the target's facing.
+        public AttackSide GetAttackSide(GridUnit user, GridUnit target)
+        {
+            if (user == null || target == null || user == target)
+            {
+                return AttackSide.Front;
+            }
+
+            return FacingUtility.SideOf(user.GridCoords, target.GridCoords, target.CurrentFacing);
+        }
+
+        // Chance, in percent, that a damaging ability connects. FFT's facing rule, simplified:
+        // the target's Evasion applies in full from the front, halved from the side, not at all
+        // from behind. A defending target's evasion doubles, as FFT's Defend does. Non-damage
+        // effects always land (Override has its own roll).
+        public int GetHitChance(GridUnit user, GridUnit target, AbilityDefinition ability)
+        {
+            if (user == null || target == null || ability == null)
+            {
+                return 0;
+            }
+
+            if (ability.EffectType != AbilityEffectType.Damage || user == target)
+            {
+                return 100;
+            }
+
+            int evasion = target.EffectiveStats.Evasion;
+
+            if (target.IsDefending)
+            {
+                evasion *= 2;
+            }
+
+            switch (GetAttackSide(user, target))
+            {
+                case AttackSide.Side: evasion /= 2; break;
+                case AttackSide.Back: evasion = 0; break;
+            }
+
+            return Mathf.Clamp(100 - evasion, 0, 100);
+        }
+
+        // Chance, in percent, that an Override lands. Public and side-effect free so the HUD can
+        // show it before the player commits.
+        public int GetOverrideChance(GridUnit user, AbilityDefinition ability)
+        {
+            if (user == null || ability == null)
+            {
+                return 0;
+            }
+
+            return Mathf.Clamp(ability.Power + user.EffectiveStats.Magic, MinOverrideChance, MaxOverrideChance);
+        }
+
+        // One line describing what the ability would do to this target, for the targeting preview.
+        // Reads the same formulas execution uses, so the preview cannot disagree with the result.
+        public string DescribeOutcome(GridUnit user, GridUnit target, AbilityDefinition ability)
+        {
+            if (user == null || target == null || ability == null)
+            {
+                return string.Empty;
+            }
+
+            int hp = target.CurrentStats.HP;
+            int maxHP = target.EffectiveStats.MaxHP;
+
+            switch (ability.EffectType)
+            {
+                case AbilityEffectType.Damage:
+                {
+                    int damage = CalculateDamage(user, target, ability);
+                    int after = Mathf.Max(0, hp - damage);
+                    string ko = after == 0 ? "  KO" : string.Empty;
+                    string side = GetAttackSide(user, target).ToString().ToLowerInvariant();
+                    return $"{ability.AbilityName}: {damage} dmg ({GetHitChance(user, target, ability)}% hit, {side})" +
+                           $"  ->  {target.DisplayName} {after}/{maxHP}{ko}";
+                }
+
+                case AbilityEffectType.Heal:
+                {
+                    int restored = Mathf.Min(ability.Power, maxHP - hp);
+                    return $"{ability.AbilityName}: +{restored} HP  ->  {target.DisplayName} {hp + restored}/{maxHP}";
+                }
+
+                case AbilityEffectType.Revive:
+                    return $"{ability.AbilityName}: reboot {target.DisplayName} with {Mathf.Clamp(ability.Power, 1, maxHP)} HP";
+
+                case AbilityEffectType.Override:
+                    return $"{ability.AbilityName}: {GetOverrideChance(user, ability)}% to hack {target.DisplayName}";
+
+                default:
+                    return $"{ability.AbilityName}: {ability.EffectType} (not implemented)";
+            }
+        }
+
         // Validates and applies an ability. resultMessage always explains the outcome, whether it
         // succeeded or why it did not, so callers can surface it without re-deriving the reason.
         //
@@ -108,50 +246,62 @@ namespace Tactica.Combat
 
             if (!IsValidTarget(user, target, ability))
             {
-                resultMessage = $"{user.name} cannot target {target.name} with {ability.AbilityName}.";
+                resultMessage = $"{user.DisplayName} cannot target {target.DisplayName} with {ability.AbilityName}.";
                 return false;
             }
 
             if (!IsTargetInRange(user, target, ability))
             {
                 int distance = GridManager.GetGridDistance(user.GridCoords, target.GridCoords);
-                resultMessage = $"{target.name} is out of range for {ability.AbilityName} " +
+                resultMessage = $"{target.DisplayName} is out of range for {ability.AbilityName} " +
                                 $"(distance {distance}, range {ability.Range}).";
                 return false;
             }
 
             if (user.CurrentStats.MP < ability.MPCost)
             {
-                resultMessage = $"{user.name} lacks MP for {ability.AbilityName} " +
+                resultMessage = $"{user.DisplayName} lacks MP for {ability.AbilityName} " +
                                 $"({user.CurrentStats.MP}/{ability.MPCost}).";
                 return false;
             }
 
-            user.CurrentStats.MP -= ability.MPCost;
+            user.SpendMP(ability.MPCost);
 
-            // Written directly rather than through a GridUnit method, so nothing refreshes the
-            // user's bar automatically - see the note on RefreshStatusBar. Without this call the
-            // MP bar only updates on the caster's next damage or heal, which reads as the bar
-            // being broken. Delete this line once MP spending goes through GridUnit.
-            user.RefreshStatusBar();
+            // The attacker turns to its target as it acts. Done after validation so a rejected
+            // ability does not swing the unit around, and before the hit roll - the attacker's own
+            // facing does not affect it, but this keeps the visual and the result in step.
+            if (target != user)
+            {
+                user.FaceTowards(target.GridCoords);
+            }
 
             switch (ability.EffectType)
             {
                 case AbilityEffectType.Damage:
                 {
+                    // A miss still spends the action and MP, like a failed hack.
+                    int hitChance = GetHitChance(user, target, ability);
+
+                    if (random.Next(100) >= hitChance)
+                    {
+                        resultMessage = $"{user.DisplayName}'s {ability.AbilityName} misses {target.DisplayName} " +
+                                        $"({hitChance}% from the {GetAttackSide(user, target).ToString().ToLowerInvariant()}).";
+                        break;
+                    }
+
                     int damage = CalculateDamage(user, target, ability);
                     target.ApplyDamage(damage);
 
-                    resultMessage = $"{user.name} hits {target.name} with {ability.AbilityName} for {damage} damage. " +
-                                    $"({target.name}: {target.CurrentStats.HP}/{target.EffectiveStats.MaxHP} HP)";
+                    resultMessage = $"{user.DisplayName} hits {target.DisplayName} with {ability.AbilityName} for {damage} damage. " +
+                                    $"({target.DisplayName}: {target.CurrentStats.HP}/{target.EffectiveStats.MaxHP} HP)";
 
                     // Separate line rather than folded into the damage text: a knockout is the
                     // event other systems care about, and it should be greppable in the console
                     // without parsing an HP total out of a sentence.
                     if (target.IsKnockedOut)
                     {
-                        resultMessage += $" {target.name} is knocked out!";
-                        Debug.Log($"KO: {target.name} was knocked out by {user.name} ({ability.AbilityName}).");
+                        resultMessage += $" {target.DisplayName} is knocked out!";
+                        Debug.Log($"KO: {target.DisplayName} was knocked out by {user.DisplayName} ({ability.AbilityName}).");
                     }
 
                     break;
@@ -165,8 +315,39 @@ namespace Tactica.Combat
                     target.Heal(ability.Power);
                     int restored = target.CurrentStats.HP - before;
 
-                    resultMessage = $"{user.name} heals {target.name} with {ability.AbilityName} for {restored} HP. " +
-                                    $"({target.name}: {target.CurrentStats.HP}/{target.EffectiveStats.MaxHP} HP)";
+                    resultMessage = $"{user.DisplayName} heals {target.DisplayName} with {ability.AbilityName} for {restored} HP. " +
+                                    $"({target.DisplayName}: {target.CurrentStats.HP}/{target.EffectiveStats.MaxHP} HP)";
+                    break;
+                }
+
+                case AbilityEffectType.Revive:
+                {
+                    target.Revive(ability.Power);
+
+                    resultMessage = $"{user.DisplayName} reboots {target.DisplayName} with {ability.AbilityName}. " +
+                                    $"({target.DisplayName}: {target.CurrentStats.HP}/{target.EffectiveStats.MaxHP} HP)";
+                    break;
+                }
+
+                case AbilityEffectType.Override:
+                {
+                    // A failed hack still spends the action and the MP - the attempt is the action,
+                    // as with FFT's Invite. "Succeeded" from this method means "was carried out".
+                    int chance = GetOverrideChance(user, ability);
+                    bool hacked = random.Next(100) < chance;
+
+                    if (hacked)
+                    {
+                        target.SetFaction(user.CurrentFaction);
+                        resultMessage = $"{user.DisplayName} overrides {target.DisplayName} ({chance}%) - " +
+                                        $"it now fights for {user.CurrentFaction}.";
+                    }
+                    else
+                    {
+                        resultMessage = $"{user.DisplayName}'s {ability.AbilityName} fails against " +
+                                        $"{target.DisplayName} ({chance}%).";
+                    }
+
                     break;
                 }
 

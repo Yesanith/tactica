@@ -1,7 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
 using Tactica.Grid;
-using Tactica.Stats;
 
 namespace Tactica.UI
 {
@@ -12,8 +11,9 @@ namespace Tactica.UI
 
     // World-space HP/MP bars hovering above a unit, built entirely in code.
     //
-    // Lives ON the GridUnit GameObject (GridUnit adds it in Awake) and creates its own child
-    // Canvas. Nothing is authored per unit, which is the point: units get spawned at runtime for
+    // Lives ON the GridUnit GameObject and creates its own child Canvas. Attached to every unit
+    // automatically through GridUnit.Spawned (see AttachToSpawnedUnits), and redrawn from
+    // GridUnit.StatsChanged - the unit never references this type, which keeps Grid free of UI. Nothing is authored per unit, which is the point: units get spawned at runtime for
     // recruitment and mission rosters, and a hand-built hierarchy cannot be pre-made for a unit
     // that does not exist yet.
     //
@@ -26,17 +26,37 @@ namespace Tactica.UI
         [SerializeField] private Vector3 offset = new Vector3(0f, 2.2f, 0f);
 
         [Header("Colours")]
-        [Tooltip("HP fill colour for player-controlled units.")]
+        [Tooltip("HP fill colour for Player-faction units.")]
         [SerializeField] private Color allyColor = new Color(0.25f, 0.85f, 0.3f);
 
-        [Tooltip("HP fill colour for everyone else.")]
+        [Tooltip("HP fill colour for Enemy-faction units.")]
         [SerializeField] private Color enemyColor = new Color(0.9f, 0.25f, 0.25f);
+
+        [Tooltip("HP fill colour for Neutral units. Amber reads as neither side at a glance, " +
+                 "which is the point.")]
+        [SerializeField] private Color neutralColor = new Color(0.95f, 0.75f, 0.2f);
 
         [Tooltip("MP fill colour. Not faction-dependent.")]
         [SerializeField] private Color mpColor = new Color(0.3f, 0.5f, 0.95f);
 
         [Tooltip("Colour behind both fills.")]
         [SerializeField] private Color backgroundColor = new Color(0.08f, 0.08f, 0.1f, 0.85f);
+
+        [Header("Turn Indicator")]
+        [Tooltip("Fill of the triangle above the bars on whoever holds the turn.")]
+        [SerializeField] private Color turnIndicatorColor = new Color(0.2f, 0.9f, 0.85f);
+
+        [SerializeField] private Color turnIndicatorOutlineColor = Color.black;
+
+        [Tooltip("Triangle size in canvas units (the bars are 100 wide).")]
+        [SerializeField] private Vector2 turnIndicatorSize = new Vector2(33f, 27f);
+
+        [Tooltip("Outline thickness in canvas units, measured perpendicular to each edge.")]
+        [Min(0f)]
+        [SerializeField] private float turnIndicatorOutline = 3.75f;
+
+        [Tooltip("Gap between the HP bar's top and the triangle's tip.")]
+        [SerializeField] private float turnIndicatorGap = 3f;
 
         [Tooltip("Unit this bar belongs to. Defaults to the GridUnit on this GameObject.")]
         [SerializeField] private GridUnit owningUnit;
@@ -55,9 +75,35 @@ namespace Tactica.UI
         private Camera billboardCamera;
         private bool built;
 
+        // Parent of the outline and fill triangles. Inactive unless this unit holds the turn.
+        private GameObject turnIndicator;
+
         // One sprite shared by every bar in the scene. Building a texture per unit would allocate
         // a texture and a sprite per spawn for what is, in every case, the same white pixel.
         private static Sprite solidSprite;
+
+        // Same idea for the turn indicator: one white, tip-down triangle, tinted per Image.
+        private static Sprite triangleSprite;
+        private const int TriangleTextureSize = 128;
+
+        // BeforeSceneLoad runs after GridUnit resets its statics (SubsystemRegistration) and before
+        // any scene object's Awake, so authored units get a bar exactly like spawned ones. The
+        // remove-then-add keeps it to one subscription if this ever runs twice.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void AttachToSpawnedUnits()
+        {
+            GridUnit.Spawned -= AttachTo;
+            GridUnit.Spawned += AttachTo;
+        }
+
+        // A hand-made bar already on the unit is kept rather than doubled up.
+        private static void AttachTo(GridUnit unit)
+        {
+            if (unit.GetComponent<UnitStatusBar>() == null)
+            {
+                unit.gameObject.AddComponent<UnitStatusBar>();
+            }
+        }
 
         private void Awake()
         {
@@ -65,8 +111,28 @@ namespace Tactica.UI
             billboardCamera = Camera.main;
         }
 
-        // Idempotent: Awake calls it, and so does UpdateBars, because GridUnit can drive the bars
-        // from its own Awake and component Awake order is not guaranteed.
+        // Draws immediately on subscribing, so a bar enabled after the unit's first StatsChanged
+        // (a hand-made one whose Awake ran late, or a re-enabled one) is not blank until the next
+        // hit.
+        private void OnEnable()
+        {
+            if (ResolveOwner() != null)
+            {
+                owningUnit.StatsChanged += Redraw;
+                Redraw();
+            }
+        }
+
+        private void OnDisable()
+        {
+            if (owningUnit != null)
+            {
+                owningUnit.StatsChanged -= Redraw;
+            }
+        }
+
+        // Idempotent: Awake calls it, and so does Redraw, because the unit can raise StatsChanged
+        // before this component's Awake when the bar was authored rather than attached.
         public void EnsureBuilt()
         {
             if (built)
@@ -111,21 +177,50 @@ namespace Tactica.UI
             barRoot.rotation = billboardCamera.transform.rotation;
         }
 
-        // Drives both fills. MP keeps its own colour; only HP carries faction.
-        public void UpdateBars(CurrentStats current, CharacterStats max)
+        // Re-reads the owning unit. MP keeps its own colour; only HP carries faction.
+        private void Redraw()
         {
-            // GridUnit can call this from its own Awake, and component Awake order is not
-            // guaranteed, so the hierarchy may not exist yet. Building on demand means the first
-            // update draws correctly instead of being silently dropped.
+            if (owningUnit == null)
+            {
+                return;
+            }
+
             EnsureBuilt();
 
-            SetFill(hpFill, current.HP, max.MaxHP);
-            SetFill(mpFill, current.MP, max.MaxMP);
+            SetFill(hpFill, owningUnit.CurrentStats.HP, owningUnit.EffectiveStats.MaxHP);
+            SetFill(mpFill, owningUnit.CurrentStats.MP, owningUnit.EffectiveStats.MaxMP);
 
-            if (hpFill != null && ResolveOwner() != null)
+            if (hpFill != null)
             {
-                hpFill.color = owningUnit.IsPlayerControlled ? allyColor : enemyColor;
+                hpFill.color = ColorFor(owningUnit.CurrentFaction);
             }
+        }
+
+        // Shows or hides the active-turn triangle. Driven by CombatHUD, which already follows
+        // OnActiveUnitChanged - the bar itself knows nothing about turns.
+        public void SetTurnIndicator(bool visible)
+        {
+            EnsureBuilt();
+
+            if (turnIndicator != null)
+            {
+                turnIndicator.SetActive(visible);
+            }
+        }
+
+        // Switch rather than a ternary now that there are three sides. A default arm would silently
+        // paint a future faction ally-green, so every member is listed and a new one is a compile
+        // warning waiting to be noticed rather than a colour bug nobody spots.
+        private Color ColorFor(Faction faction)
+        {
+            switch (faction)
+            {
+                case Faction.Player: return allyColor;
+                case Faction.Enemy: return enemyColor;
+                case Faction.Neutral: return neutralColor;
+            }
+
+            return neutralColor;
         }
 
         private GridUnit ResolveOwner()
@@ -181,6 +276,65 @@ namespace Tactica.UI
             float halfSpacing = BarSpacing * 0.5f;
             hpFill = CreateBar(canvasRect, "HP", new Vector2(0f, halfSpacing + BarHeight * 0.5f), allyColor);
             mpFill = CreateBar(canvasRect, "MP", new Vector2(0f, -halfSpacing - BarHeight * 0.5f), mpColor);
+
+            float hpTop = halfSpacing + BarHeight;
+            CreateTurnIndicator(canvasRect, hpTop + turnIndicatorGap);
+        }
+
+        // A tip-down triangle whose tip sits tipY above the canvas centre, pointing at the unit.
+        //
+        // Two stacked Images of the same triangle: a black one at full size, and a turquoise one
+        // shrunk about the triangle's INCENTRE. Scaling about the incentre moves every edge inward
+        // by the same perpendicular distance, so the outline is equally thick on all three sides;
+        // scaling about the rect centre would leave the slanted edges thinner than the top.
+        // Outside the canvas rect on purpose - world-space canvases do not clip their children.
+        private void CreateTurnIndicator(RectTransform parent, float tipY)
+        {
+            float width = turnIndicatorSize.x;
+            float height = turnIndicatorSize.y;
+
+            GameObject root = new GameObject("TurnIndicator", typeof(RectTransform));
+            RectTransform rootRect = (RectTransform)root.transform;
+            rootRect.SetParent(parent, false);
+            rootRect.sizeDelta = turnIndicatorSize;
+            rootRect.anchoredPosition = new Vector2(0f, tipY + height * 0.5f);
+
+            CreateTriangle(rootRect, "Outline", turnIndicatorSize, Vector2.zero, turnIndicatorOutlineColor);
+
+            // Vertices relative to the rect centre: top-left, top-right, tip.
+            Vector2 a = new Vector2(-width * 0.5f, height * 0.5f);
+            Vector2 b = new Vector2(width * 0.5f, height * 0.5f);
+            Vector2 c = new Vector2(0f, -height * 0.5f);
+
+            // Incentre = vertices weighted by the length of the side opposite each.
+            float sideA = Vector2.Distance(b, c);
+            float sideB = Vector2.Distance(c, a);
+            float sideC = Vector2.Distance(a, b);
+            float perimeter = sideA + sideB + sideC;
+            Vector2 incentre = (sideA * a + sideB * b + sideC * c) / perimeter;
+            float inradius = width * height / perimeter;
+
+            float scale = Mathf.Clamp01((inradius - turnIndicatorOutline) / inradius);
+
+            // A point p maps to incentre + scale * (p - incentre); the rect centre is the origin.
+            CreateTriangle(rootRect, "Fill", turnIndicatorSize * scale, incentre * (1f - scale), turnIndicatorColor);
+
+            turnIndicator = root;
+            turnIndicator.SetActive(false);
+        }
+
+        private static void CreateTriangle(RectTransform parent, string name, Vector2 size, Vector2 position, Color color)
+        {
+            GameObject triangleObject = new GameObject(name, typeof(RectTransform));
+            RectTransform rect = (RectTransform)triangleObject.transform;
+            rect.SetParent(parent, false);
+            rect.sizeDelta = size;
+            rect.anchoredPosition = position;
+
+            Image image = triangleObject.AddComponent<Image>();
+            image.sprite = GetTriangleSprite();
+            image.color = color;
+            image.raycastTarget = false;
         }
 
         // One background plus one fill. The fill is a child stretched over the background, so
@@ -247,6 +401,54 @@ namespace Tactica.UI
             solidSprite.hideFlags = HideFlags.HideAndDontSave;
 
             return solidSprite;
+        }
+
+        // A white triangle filling the texture: top edge along the top, tip at the bottom centre.
+        // Edges are antialiased over about one pixel, so it stays smooth when stretched to any
+        // rect - the Image is what decides its final proportions.
+        private static Sprite GetTriangleSprite()
+        {
+            if (triangleSprite != null)
+            {
+                return triangleSprite;
+            }
+
+            int size = TriangleTextureSize;
+            Texture2D texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                hideFlags = HideFlags.HideAndDontSave,
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+            };
+
+            Color32[] pixels = new Color32[size * size];
+
+            // Side edges are |x| = y / 2 in a unit square centred on x; dividing by the line's
+            // normal length turns the test into a distance, in pixels, for the antialiasing.
+            float sideNormal = Mathf.Sqrt(1f + 0.25f);
+
+            for (int py = 0; py < size; py++)
+            {
+                for (int px = 0; px < size; px++)
+                {
+                    float u = (px + 0.5f) / size - 0.5f;
+                    float v = (py + 0.5f) / size;
+
+                    float toTop = (1f - v) * size;
+                    float toSide = (0.5f * v - Mathf.Abs(u)) / sideNormal * size;
+
+                    float alpha = Mathf.Clamp01(Mathf.Min(toTop, toSide) + 0.5f);
+                    pixels[py * size + px] = new Color32(255, 255, 255, (byte)(alpha * 255f));
+                }
+            }
+
+            texture.SetPixels32(pixels);
+            texture.Apply();
+
+            triangleSprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), size);
+            triangleSprite.hideFlags = HideFlags.HideAndDontSave;
+
+            return triangleSprite;
         }
     }
 }

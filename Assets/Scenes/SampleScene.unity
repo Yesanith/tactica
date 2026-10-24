@@ -676,7 +676,7 @@ MonoBehaviour:
   currentJob: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
   level: 1
   gridManagerRef: {fileID: 348188158}
-  isPlayerControlled: 1
+  faction: 0
   statusBar: {fileID: 0}
   defenseBonus: 5
   pivotHeight: 1
@@ -814,7 +814,7 @@ MonoBehaviour:
   currentJob: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
   level: 1
   gridManagerRef: {fileID: 348188158}
-  isPlayerControlled: 0
+  faction: 1
   statusBar: {fileID: 0}
   defenseBonus: 5
   pivotHeight: 1
@@ -1371,6 +1371,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Combat.EnemyAIController
   gridManagerRef: {fileID: 348188158}
   combatManagerRef: {fileID: 1972310229}
+  thinkDelay: 2
+  actionDelay: 2
 --- !u!114 &1980611772 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 2734445220429546097, guid: 50867f148f84280478601e99f94fb786, type: 3}

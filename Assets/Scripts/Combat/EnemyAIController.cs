@@ -92,13 +92,15 @@ namespace Tactica.Combat
                 return;
             }
 
-            // Player units are driven by the HUD. This is the whole gate; PlayerActionController
-            // has no matching check because its entry points are button presses, which cannot
-            // happen during an AI turn once the HUD is disabled for one.
+            // Player units are driven by the HUD. PlayerActionController applies the mirror-image
+            // gate (it refuses any unit that is not Player), so every faction has exactly one
+            // driver.
             //
-            // Reads IsPlayerControlled, which is the placeholder faction bool - so this inherits
-            // that limitation exactly. Replacing it with a real Faction type changes this one line.
-            if (unit.IsPlayerControlled)
+            // Anything not Player is driven from here, Neutral included - a neutral unit that gets
+            // a turn still has to do something with it, and "run the same evaluation" is a better
+            // default than standing frozen. What it *decides* comes from IsValidTarget, so if
+            // neutrals stop being hostile to everyone this needs no change.
+            if (unit.CurrentFaction == Faction.Player)
             {
                 return;
             }
@@ -143,12 +145,12 @@ namespace Tactica.Combat
                     if (gridManagerRef.TryMoveUnitToTile(aiUnit, decision.DestinationTile))
                     {
                         aiUnit.MarkMoved();
-                        Debug.Log($"AI: {aiUnit.name} moves to {decision.DestinationTile}.", aiUnit);
+                        Debug.Log($"AI: {aiUnit.DisplayName} moves to {decision.DestinationTile}.", aiUnit);
                     }
                     else
                     {
                         Debug.Log(
-                            $"AI: {aiUnit.name} could not move to {decision.DestinationTile} - " +
+                            $"AI: {aiUnit.DisplayName} could not move to {decision.DestinationTile} - " +
                             "the tile is no longer reachable.",
                             aiUnit);
                     }
@@ -158,22 +160,29 @@ namespace Tactica.Combat
 
                 // Re-tested rather than trusting decision.CanActThisTurn: that was computed for the
                 // destination, and the move above may have been refused.
-                if (StillActing(aiUnit) && !aiUnit.IsKnockedOut)
+                if (StillActing(aiUnit) && !aiUnit.IsKnockedOut && TryAttack(aiUnit, decision))
                 {
-                    TryAttack(aiUnit, decision);
+                    // The attack ended the encounter. There is no next turn to pass to, and
+                    // EndCurrentTurn would only log that combat is already over.
+                    turnRoutine = null;
+                    yield break;
                 }
             }
 
             EndTurn(aiUnit);
         }
 
-        private void TryAttack(GridUnit aiUnit, AITargetDecision decision)
+        // Returns true if the attack ENDED COMBAT, not if it landed - the caller only needs to know
+        // whether there is still a turn to pass on.
+        private bool TryAttack(GridUnit aiUnit, AITargetDecision decision)
         {
             GridUnit target = decision.Target;
 
-            if (target == null || target.IsKnockedOut)
+            // A knocked-out target is legal for a reboot; the resolver decides. Only a target that is
+            // gone for good is dropped here.
+            if (target == null || target.IsFlatlined)
             {
-                return;
+                return false;
             }
 
             // Range is checked inside TryExecuteAbility, which rejects with a message rather than
@@ -182,22 +191,27 @@ namespace Tactica.Combat
             if (!combatManagerRef.Resolver.IsTargetInRange(aiUnit, target, decision.Ability))
             {
                 Debug.Log(
-                    $"AI: {aiUnit.name} is not in range of {target.name} after moving - holding.",
+                    $"AI: {aiUnit.DisplayName} is not in range of {target.DisplayName} after moving - holding.",
                     aiUnit);
-                return;
+                return false;
             }
 
             bool success = combatManagerRef.Resolver.TryExecuteAbility(
                 aiUnit, target, decision.Ability, out string message);
 
-            // Mirrors ResolveTargetClick: only a landed ability counts as having attacked, and the
+            // Mirrors ResolveTargetClick: only a landed ability counts as having acted, and the
             // same OK/REJECTED shape so AI and player actions read identically in the console.
             if (success)
             {
-                aiUnit.MarkAttacked();
+                aiUnit.MarkActed();
             }
 
             Debug.Log($"[{(success ? "OK" : "REJECTED")}] {message}", aiUnit);
+
+            // Only on success: a rejected ability changed no HP, so no side can have been emptied.
+            // Same immediate end check the player path makes - an AI wiping out the last player
+            // unit must end the encounter there, not after passing the turn to a corpse.
+            return success && combatManagerRef.TryEndCombatNow();
         }
 
         // Straight to CombatManager, deliberately not through anything shaped like
@@ -229,7 +243,11 @@ namespace Tactica.Combat
                 && combatManagerRef.GetActiveUnit() == aiUnit;
         }
 
-        // Picks who this unit wants to hit.
+        // Picks what this unit does and to whom.
+        //
+        // Priority, in order: reboot a downed ally it can reach THIS turn, then its damage ability.
+        // A reboot it cannot reach is not chased - walking toward a corpse while the enemy hits it
+        // is worse than fighting - so an unreachable reboot falls through to attacking.
         //
         // Public and side-effect free so the decision can be unit-tested and inspected without
         // running a turn.
@@ -240,9 +258,26 @@ namespace Tactica.Combat
                 return default;
             }
 
-            AbilityDefinition ability = SelectAbility(aiUnit);
+            AbilityDefinition reboot = FindAffordable(aiUnit, AbilityEffectType.Revive);
 
-            if (ability == null)
+            if (reboot != null)
+            {
+                AITargetDecision rebootDecision = FindBestTarget(aiUnit, reboot);
+
+                if (rebootDecision.HasTarget && rebootDecision.CanActThisTurn)
+                {
+                    return rebootDecision;
+                }
+            }
+
+            return FindBestTarget(aiUnit, SelectAbility(aiUnit));
+        }
+
+        // The target search for one specific ability. Which units count is entirely IsValidTarget's
+        // call - for Revive that means downed allies, for damage standing enemies.
+        public AITargetDecision FindBestTarget(GridUnit aiUnit, AbilityDefinition ability)
+        {
+            if (aiUnit == null || combatManagerRef == null || gridManagerRef == null || ability == null)
             {
                 return default;
             }
@@ -255,11 +290,11 @@ namespace Tactica.Combat
             // Current position goes FIRST, not appended. GetTilesInMoveRange returns BFS order, so
             // prepending 0 steps keeps the whole list sorted by actual path cost - which lets the
             // destination pickers below take the first acceptable tile and get the cheapest one,
-            // exactly, rather than approximating cost with Chebyshev distance.
+            // exactly, rather than approximating cost with straight-line distance.
             List<Vector2Int> standingTiles = new List<Vector2Int> { aiUnit.GridCoords };
 
             standingTiles.AddRange(
-                gridManagerRef.GetTilesInMoveRange(aiUnit.GridCoords, aiUnit.EffectiveStats.Move));
+                gridManagerRef.GetTilesInMoveRange(aiUnit.GridCoords, aiUnit.EffectiveStats.Move, aiUnit.EffectiveStats.Jump));
 
             GridUnit bestReachable = null;
             int bestReachableHP = int.MaxValue;
@@ -278,7 +313,9 @@ namespace Tactica.Combat
             {
                 GridUnit candidate = roster[i];
 
-                if (candidate == null || candidate == aiUnit || candidate.IsKnockedOut)
+                // Knocked-out candidates are NOT skipped here: whether they are valid depends on the
+                // ability (Revive wants exactly them), and IsValidTarget below decides that.
+                if (candidate == null || candidate == aiUnit || candidate.IsFlatlined)
                 {
                     continue;
                 }
@@ -376,13 +413,12 @@ namespace Tactica.Combat
 
         // The tile that gets closest to the target.
         //
-        // Chebyshev alone does not discriminate here: every tile in the same row or column as the
-        // target is equidistant under it, so a whole rank of candidates ties and the pick falls to
-        // whatever order the flood fill emitted - deterministic, but it makes the unit sidle
-        // diagonally across the board instead of walking at its target.
+        // Manhattan distance alone ties often: every tile on the same diagonal band around the
+        // target is equidistant, so the pick would fall to whatever order the flood fill emitted -
+        // deterministic, but it makes the unit drift sideways instead of walking at its target.
         //
         // Squared Euclidean breaks those ties the way a person would expect, and stays exact
-        // integer arithmetic (no sqrt, no float comparison). It is only a tie-break: Chebyshev
+        // integer arithmetic (no sqrt, no float comparison). It is only a tie-break: Manhattan
         // still decides which tile is genuinely closer, because that is the metric movement and
         // range are measured in.
         private static Vector2Int ClosestTileTo(List<Vector2Int> standingTiles, Vector2Int target)
@@ -437,12 +473,12 @@ namespace Tactica.Combat
             return best;
         }
 
-        // PLACEHOLDER: first unlocked ability, matching PlayerActionController.SelectAbility.
+        // PLACEHOLDER: the AI's attack choice. It reboots downed allies (FindBestTarget) but never
+        // hacks - an enemy Override on the player's crew needs a counterplay story first. Scoring
+        // abilities by expected value (damage, a securable kill, a hack chance) replaces this.
         //
-        // Duplicated deliberately rather than shared today - it is three lines wrapping a
-        // JobDefinition call, and the two will diverge the moment real selection exists (the player
-        // gets a menu; this gets scored by expected damage). When that happens neither of these
-        // survives, so factoring out the placeholder now would only add a seam to delete later.
+        // Prefers the first Damage ability, so a job that lists Override or Reboot first does not
+        // leave the AI hacking at random; falls back to the first unlock of any kind.
         private static AbilityDefinition SelectAbility(GridUnit unit)
         {
             if (unit.CurrentJob == null)
@@ -452,7 +488,34 @@ namespace Tactica.Combat
 
             List<AbilityDefinition> unlocked = unit.CurrentJob.GetUnlockedAbilities(unit.Level);
 
+            foreach (AbilityDefinition ability in unlocked)
+            {
+                if (ability.EffectType == AbilityEffectType.Damage)
+                {
+                    return ability;
+                }
+            }
+
             return unlocked.Count > 0 ? unlocked[0] : null;
+        }
+
+        // The first unlocked ability of this effect the unit can pay for, or null.
+        private static AbilityDefinition FindAffordable(GridUnit unit, AbilityEffectType effect)
+        {
+            if (unit.CurrentJob == null)
+            {
+                return null;
+            }
+
+            foreach (AbilityDefinition ability in unit.CurrentJob.GetUnlockedAbilities(unit.Level))
+            {
+                if (ability.EffectType == effect && unit.CurrentStats.MP >= ability.MPCost)
+                {
+                    return ability;
+                }
+            }
+
+            return null;
         }
 
         // The whole output of this layer. Says who decided, what it picked, and on what grounds -
@@ -463,7 +526,7 @@ namespace Tactica.Combat
             if (decision.Ability == null)
             {
                 Debug.Log(
-                    $"AI: {aiUnit.name} has no usable ability - check the job's Ability Unlocks " +
+                    $"AI: {aiUnit.DisplayName} has no usable ability - check the job's Ability Unlocks " +
                     "list and the unit's Level. No decision made.",
                     aiUnit);
                 return;
@@ -471,7 +534,7 @@ namespace Tactica.Combat
 
             if (!decision.HasTarget)
             {
-                Debug.Log($"AI: {aiUnit.name} found no valid target for {decision.Ability.AbilityName}.", aiUnit);
+                Debug.Log($"AI: {aiUnit.DisplayName} found no valid target for {decision.Ability.AbilityName}.", aiUnit);
                 return;
             }
 
@@ -481,7 +544,7 @@ namespace Tactica.Combat
             if (decision.CanActThisTurn)
             {
                 Debug.Log(
-                    $"AI: {aiUnit.name} picks {target.name} ({targetHP}) with {decision.Ability.AbilityName}. " +
+                    $"AI: {aiUnit.DisplayName} picks {target.DisplayName} ({targetHP}) with {decision.Ability.AbilityName}. " +
                     $"Reason: lowest HP of {decision.ReachableTargetCount} reachable target(s); " +
                     $"distance {decision.DistanceFromBestStandingTile} vs range {decision.Ability.Range}.",
                     aiUnit);
@@ -491,7 +554,7 @@ namespace Tactica.Combat
             int shortfall = decision.DistanceFromBestStandingTile - decision.Ability.Range;
 
             Debug.Log(
-                $"AI: {aiUnit.name} wants {target.name} ({targetHP}) but cannot reach anyone this turn. " +
+                $"AI: {aiUnit.DisplayName} wants {target.DisplayName} ({targetHP}) but cannot reach anyone this turn. " +
                 $"Reason: nearest valid target, still {shortfall} step(s) short even after moving " +
                 $"(distance {decision.DistanceFromBestStandingTile} vs range {decision.Ability.Range}).",
                 aiUnit);

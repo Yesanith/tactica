@@ -9,11 +9,17 @@ using Tactica.Stats;
 namespace Tactica.Combat
 {
     // Turn sequencing only: who acts, in what order, and whose turn it is now.
-    // Deliberately knows nothing about what an action does - that lands next.
+    // Deliberately knows nothing about what an action does.
+    //
+    // Turns come from a CT (charge time) clock, after Final Fantasy Tactics - see
+    // Docs/FFT_DESIGN_NOTES.md section 2. Every clock tick each unit gains CT equal to its Speed;
+    // whoever reaches TurnThreshold acts, then pays for what it did. Speed therefore decides how
+    // OFTEN a unit acts, not merely who goes first, and holding back is a real choice: a unit that
+    // only moved, or only waited, comes round again sooner.
     public class CombatManager : MonoBehaviour
     {
-        [Tooltip("Units in this encounter. Inspector-assigned for now; real registration arrives " +
-                 "with encounter setup.")]
+        [Tooltip("Units in this encounter. Replaced by StartCombat(units) when a mission spawns " +
+                 "its own; the Inspector list is for hand-built test scenes.")]
         [FormerlySerializedAs("ParticipatingUnits")]
         [SerializeField] private List<GridUnit> participatingUnits = new List<GridUnit>();
 
@@ -32,20 +38,53 @@ namespace Tactica.Combat
         // hand-off) can subscribe without this class growing a reference to each of them.
         public event Action<GridUnit> OnActiveUnitChanged;
 
-        // Initiative order, resolved once by StartCombat. Separate from participatingUnits so the
-        // authored list stays untouched and re-rollable.
+        // Raised once when an encounter is decided - never for AbortCombat, which decides nothing.
+        // Fired after OnActiveUnitChanged(null), so listeners see the board already cleared.
+        public event Action<CombatEndResult> OnCombatEnded;
+
+        // Which sides were present when the encounter began. Snapshotted rather than read off the
+        // live roster, because SetFaction can empty a side mid-fight - and recruiting the last
+        // enemy must still count as winning, not as "there were never any enemies".
+        private bool encounterHadPlayers;
+        private bool encounterHadEnemies;
+
+        // FFT's numbers. A turn that moved AND acted costs a full TurnThreshold; doing only one
+        // costs 80, doing neither 60. Whatever CT is left over carries into the next cycle, capped
+        // at MaxCarryOver so a unit that idles cannot bank several turns in a row.
+        public const int TurnThreshold = 100;
+        public const int CostMoveAndAct = 100;
+        public const int CostMoveOrAct = 80;
+        public const int CostNeither = 60;
+        public const int MaxCarryOver = 60;
+
+        // A roster where nobody has Speed > 0 would tick forever. This many ticks without anyone
+        // becoming ready is treated as that case rather than as a slow unit.
+        private const int MaxTicksWithoutTurn = 10000;
+
+        // Raised when a knocked-out unit's flatline counter runs out and it leaves the board for
+        // good. MissionRunner reads the unit's IsFlatlined afterwards; the HUD can react here.
+        public event Action<GridUnit> OnUnitFlatlined;
+
+        // The roster in a stable order: Speed descending, then authored position. Not a turn order
+        // any more - the CT clock decides that - but it is what breaks CT ties, and EnemyAIController
+        // iterates it for deterministic target tie-breaks.
         private readonly List<GridUnit> initiativeOrder = new List<GridUnit>();
 
-        private int activeIndex;
+        private readonly Dictionary<GridUnit, int> chargeTime = new Dictionary<GridUnit, int>();
 
-        // Rounds have no logic yet, but the counter makes the wrap visible in the log and gives
-        // the concept somewhere to live.
-        public int RoundNumber { get; private set; }
+        private GridUnit activeUnit;
 
-        // The encounter's roster in a stable order. EnemyAIController iterates it to find targets,
-        // and relies on the order being stable for its tie-breaks. Also the source for an eventual
-        // turn-order UI strip.
+        // Turns handed out this encounter, and clock ticks elapsed. Both exist for the log and the
+        // HUD; per-tick logic (poison, regen, status durations) belongs in Tick.
+        public int TurnNumber { get; private set; }
+        public int ClockTick { get; private set; }
+
         public IReadOnlyList<GridUnit> TurnOrder => initiativeOrder;
+
+        public int GetChargeTime(GridUnit unit)
+        {
+            return unit != null && chargeTime.TryGetValue(unit, out int ct) ? ct : 0;
+        }
 
         // Stateless rules engine, so one instance serves the whole encounter. Owned here because
         // CombatManager is what decides when an action may be attempted; the resolver only decides
@@ -60,6 +99,7 @@ namespace Tactica.Combat
         public void StartCombat()
         {
             BuildInitiativeOrder();
+            SnapshotStartingSides();
 
             if (initiativeOrder.Count == 0)
             {
@@ -72,30 +112,56 @@ namespace Tactica.Combat
                 return;
             }
 
-            activeIndex = 0;
-            RoundNumber = 1;
-            CurrentState = CombatState.WaitingForInput;
+            // Everyone starts empty, so the first turn goes to whoever fills fastest - Speed, then
+            // roster order on a tie.
+            chargeTime.Clear();
 
-            Debug.Log($"Combat start. Turn order: {DescribeOrder()}", this);
-            Debug.Log($"Round {RoundNumber} - {GetActiveUnit().name}'s turn.", this);
-
-            // Fired last, once state and index are settled, so a listener reading CurrentState or
-            // GetActiveUnit from inside the handler sees the finished turn, not a half-built one.
-            BeginTurnFor(GetActiveUnit());
-        }
-
-        // Whoever is currently acting, or null before StartCombat or after CombatEnd.
-        public GridUnit GetActiveUnit()
-        {
-            if (initiativeOrder.Count == 0 || activeIndex < 0 || activeIndex >= initiativeOrder.Count)
+            foreach (GridUnit unit in initiativeOrder)
             {
-                return null;
+                chargeTime[unit] = 0;
             }
 
-            return initiativeOrder[activeIndex];
+            activeUnit = null;
+            TurnNumber = 0;
+            ClockTick = 0;
+
+            Debug.Log($"Combat start. Roster: {DescribeOrder()}", this);
+
+            AdvanceToNextTurn();
         }
 
-        // Passes the turn to the next unit in initiative order, wrapping to the start.
+        // Replaces the roster and starts. The entry point for runtime-spawned encounters; the
+        // Inspector list and the context menu remain for hand-built test scenes.
+        public void StartCombat(IEnumerable<GridUnit> units)
+        {
+            participatingUnits.Clear();
+            participatingUnits.AddRange(units);
+            StartCombat();
+        }
+
+        // Ends the encounter with no winner - a retreat, or the mission flow tearing the board
+        // down. Does not raise OnCombatEnded, because nothing was decided.
+        public void AbortCombat()
+        {
+            if (CurrentState == CombatState.CombatEnd)
+            {
+                return;
+            }
+
+            CurrentState = CombatState.CombatEnd;
+
+            Debug.Log($"=== COMBAT ABORTED (turn {TurnNumber}) ===", this);
+
+            OnActiveUnitChanged?.Invoke(null);
+        }
+
+        // Whoever is currently acting, or null before StartCombat.
+        public GridUnit GetActiveUnit()
+        {
+            return activeUnit;
+        }
+
+        // Charges the active unit for its turn and hands the turn to whoever the clock picks next.
         // Refuses to advance once the encounter is over.
         public void EndCurrentTurn()
         {
@@ -117,44 +183,250 @@ namespace Tactica.Combat
 
             CurrentState = CombatState.TurnTransition;
 
-            // TIMING GAP: the only end-condition check is here, at the turn boundary. A unit KO'd
-            // mid-turn therefore does not end combat until the acting player presses End Turn, so
-            // a wiped-out side can still be "targeted" for the rest of that turn. Closing this
-            // means ActionResolver calling back into CombatManager after each action, which is a
-            // bigger change (the resolver currently knows nothing about turn structure and is
-            // testable precisely because of that). Checking here is enough for now.
-            CombatEndResult result = CheckCombatEndCondition();
-
-            if (result != CombatEndResult.Ongoing)
+            // The turn-boundary check. Whoever acted may have ended the fight, and TryEndCombatNow
+            // is also called the moment an action resolves - see its comment. Kept here as well
+            // because a side can be emptied by something that is not an attack.
+            if (TryEndCombatNow())
             {
-                CurrentState = CombatState.CombatEnd;
-
-                Debug.Log($"=== COMBAT OVER: {result} (round {RoundNumber}) ===", this);
-
-                // Null tells listeners there is no active unit any more - GridManager clears its
-                // move-range highlight on this, so the board does not keep showing a dead unit's
-                // reachable tiles after the encounter ends.
-                OnActiveUnitChanged?.Invoke(null);
                 return;
             }
 
-            activeIndex = (activeIndex + 1) % initiativeOrder.Count;
-
-            // Wrapping to index 0 is a new round. Per-round logic belongs exactly here: poison and
-            // regeneration ticks, buff durations counting down, weather, reinforcement spawns.
-            // Doing that per-turn instead would make effects last longer for units late in the
-            // order, which is the kind of unfairness players notice without being able to name.
-            if (activeIndex == 0)
+            if (activeUnit != null)
             {
-                RoundNumber++;
-                Debug.Log($"--- Round {RoundNumber} ---", this);
+                PayForTurn(activeUnit, CostFor(activeUnit));
             }
 
-            CurrentState = CombatState.WaitingForInput;
+            AdvanceToNextTurn();
+        }
 
-            Debug.Log($"Round {RoundNumber} - {GetActiveUnit().name}'s turn.", this);
+        // What the turn just taken costs, by FFT's rule: both, one, or neither of move and act.
+        private static int CostFor(GridUnit unit)
+        {
+            bool moved = unit.HasMovedThisTurn;
+            bool acted = unit.HasActedThisTurn;
 
-            BeginTurnFor(GetActiveUnit());
+            if (moved && acted) return CostMoveAndAct;
+            if (moved || acted) return CostMoveOrAct;
+            return CostNeither;
+        }
+
+        private void PayForTurn(GridUnit unit, int cost)
+        {
+            chargeTime[unit] = Mathf.Min(GetChargeTime(unit) - cost, MaxCarryOver);
+        }
+
+        // Runs the clock until someone standing is ready, and gives them the turn.
+        //
+        // Knocked-out units keep charging, as in FFT: when a downed unit's CT would grant a turn,
+        // its flatline counter drops instead, and the clock runs on. That is what makes the counter
+        // a real deadline - a fast unit goes down to it faster - and why the loop below can hand
+        // out several "turns" before anyone acts.
+        private void AdvanceToNextTurn()
+        {
+            int idleTicks = 0;
+
+            while (true)
+            {
+                GridUnit ready = FindReadyUnit(chargeTime);
+
+                if (ready == null)
+                {
+                    if (++idleTicks > MaxTicksWithoutTurn)
+                    {
+                        Debug.LogError(
+                            $"{nameof(CombatManager)}: no unit reached {TurnThreshold} CT in " +
+                            $"{MaxTicksWithoutTurn} ticks - does anyone have Speed above 0? Aborting.",
+                            this);
+                        AbortCombat();
+                        return;
+                    }
+
+                    Tick();
+                    continue;
+                }
+
+                if (ready.IsKnockedOut)
+                {
+                    PayForTurn(ready, CostNeither);
+
+                    if (ready.TickFlatline())
+                    {
+                        Debug.Log($"FLATLINE: {ready.DisplayName} is gone.", ready);
+                        ready.Flatline();
+                        OnUnitFlatlined?.Invoke(ready);
+                    }
+                    else
+                    {
+                        Debug.Log($"{ready.DisplayName} is down - flatline in {ready.FlatlineCounter}.", ready);
+                    }
+
+                    continue;
+                }
+
+                activeUnit = ready;
+                TurnNumber++;
+                CurrentState = CombatState.WaitingForInput;
+
+                Debug.Log(
+                    $"Turn {TurnNumber} (tick {ClockTick}) - {activeUnit.DisplayName}'s turn " +
+                    $"(CT {GetChargeTime(activeUnit)}).",
+                    this);
+
+                // Fired last, once state is settled, so a listener reading CurrentState or
+                // GetActiveUnit from inside the handler sees the finished turn, not a half-built one.
+                BeginTurnFor(activeUnit);
+                return;
+            }
+        }
+
+        // One clock tick: every unit still on the board gains its Speed in CT. Per-tick effects
+        // (poison, regeneration, status countdowns) belong here, so they run on the same clock as
+        // turns rather than per turn - which would make them last longer for slow units.
+        private void Tick()
+        {
+            ClockTick++;
+
+            foreach (GridUnit unit in initiativeOrder)
+            {
+                if (unit == null || unit.IsFlatlined)
+                {
+                    continue;
+                }
+
+                chargeTime[unit] = GetChargeTime(unit) + Mathf.Max(0, unit.EffectiveStats.Speed);
+            }
+        }
+
+        // Highest CT at or over the threshold wins; ties go to roster order (Speed, then authored
+        // position), which keeps the clock deterministic for the same reason initiative was.
+        private GridUnit FindReadyUnit(Dictionary<GridUnit, int> charges)
+        {
+            GridUnit best = null;
+            int bestCharge = int.MinValue;
+
+            foreach (GridUnit unit in initiativeOrder)
+            {
+                if (unit == null || unit.IsFlatlined)
+                {
+                    continue;
+                }
+
+                int ct = charges.TryGetValue(unit, out int value) ? value : 0;
+
+                if (ct >= TurnThreshold && ct > bestCharge)
+                {
+                    best = unit;
+                    bestCharge = ct;
+                }
+            }
+
+            return best;
+        }
+
+        // The next `count` turns, starting with the unit acting now. A forecast, not a promise: it
+        // assumes everyone - the active unit included - spends a full move-and-act turn, so a unit
+        // that holds back will come round earlier than shown. Knocked-out units appear where their
+        // flatline counter would tick, which is the deadline worth seeing.
+        public List<GridUnit> PredictTurns(int count)
+        {
+            List<GridUnit> forecast = new List<GridUnit>();
+
+            if (CurrentState == CombatState.CombatEnd || activeUnit == null || count <= 0)
+            {
+                return forecast;
+            }
+
+            Dictionary<GridUnit, int> charges = new Dictionary<GridUnit, int>(chargeTime);
+
+            forecast.Add(activeUnit);
+            charges[activeUnit] = Mathf.Min(charges[activeUnit] - CostMoveAndAct, MaxCarryOver);
+
+            int idleTicks = 0;
+
+            while (forecast.Count < count && idleTicks <= MaxTicksWithoutTurn)
+            {
+                GridUnit ready = FindReadyUnit(charges);
+
+                if (ready == null)
+                {
+                    idleTicks++;
+
+                    foreach (GridUnit unit in initiativeOrder)
+                    {
+                        if (unit != null && !unit.IsFlatlined)
+                        {
+                            charges[unit] = charges[unit] + Mathf.Max(0, unit.EffectiveStats.Speed);
+                        }
+                    }
+
+                    continue;
+                }
+
+                forecast.Add(ready);
+                int cost = ready.IsKnockedOut ? CostNeither : CostMoveAndAct;
+                charges[ready] = Mathf.Min(charges[ready] - cost, MaxCarryOver);
+            }
+
+            return forecast;
+        }
+
+        // Ends the encounter if one side is down, and reports whether it did.
+        //
+        // Public because the end condition has to be tested the instant an action resolves, not
+        // only at the turn boundary. Before this existed, knocking out the last enemy left combat
+        // running until the player pressed Wait - the corpses were still targetable and the HUD
+        // still offered actions, which reads as the win being missed rather than delayed.
+        //
+        // Callers are the two controllers that already hold a CombatManager reference and already
+        // know when an attack just landed: PlayerActionController.ResolveTargetClick and
+        // EnemyAIController's attack step.
+        //
+        // Deliberately NOT called from ActionResolver. That class is a plain C# object with no
+        // scene dependency, constructible in a test - the property that makes combat maths testable
+        // at all. Giving it a CombatManager reference to call back through would end that, and the
+        // resolver would have to learn about turn structure to know when the call was appropriate.
+        // The controllers already have both pieces of knowledge, so nothing is gained by pushing it
+        // down a layer.
+        //
+        // Idempotent: returns true without re-announcing if combat is already over, so a caller
+        // that checks twice cannot fire the event twice.
+        public bool TryEndCombatNow()
+        {
+            if (CurrentState == CombatState.CombatEnd)
+            {
+                return true;
+            }
+
+            CombatEndResult result = CheckCombatEndCondition();
+
+            if (result == CombatEndResult.Ongoing)
+            {
+                return false;
+            }
+
+            EndCombat(result);
+            return true;
+        }
+
+        // Ends the encounter with a result decided elsewhere - a mission objective met or failed.
+        // CombatManager still knows nothing about objectives; MissionRunner evaluates them and
+        // calls this. Ignored once combat is over or for Ongoing, so it can only ever end a fight.
+        public void EndCombat(CombatEndResult result)
+        {
+            if (CurrentState == CombatState.CombatEnd || result == CombatEndResult.Ongoing)
+            {
+                return;
+            }
+
+            CurrentState = CombatState.CombatEnd;
+
+            Debug.Log($"=== COMBAT OVER: {result} (turn {TurnNumber}) ===", this);
+
+            // Null tells listeners there is no active unit any more - PlayerActionController clears
+            // its move-range highlight on this, so the board does not keep showing a dead unit's
+            // reachable tiles after the encounter ends.
+            OnActiveUnitChanged?.Invoke(null);
+            OnCombatEnded?.Invoke(result);
         }
 
         // Resets the incoming unit's per-turn state, then announces the change.
@@ -186,10 +458,26 @@ namespace Tactica.Combat
         // Mutual wipeout resolves to PlayerDefeat: if the last player unit and the last enemy fall
         // in the same exchange, that is not a win. Stated here because the order of the two checks
         // below is the only thing that decides it, and it would be easy to swap by accident.
+        //
+        // NEUTRALS COUNT FOR NEITHER SIDE. A surviving neutral does not keep a won encounter open,
+        // and wiping out every neutral wins nothing - only Player and Enemy decide the outcome.
+        // The alternative (neutrals block victory) would mean a wandering critter could stall a
+        // cleared map indefinitely. If a mission ever needs "keep the merchant alive" or "kill the
+        // beast", that is a mission objective evaluated somewhere above this, not a combat end
+        // condition: end conditions answer "is there still a fight", objectives answer "did you do
+        // what you came for". Conflating them is how "escort" missions become unloseable.
+        //
+        // Note this also means an encounter of nothing but neutrals is permanently Ongoing, which
+        // is correct - nobody in it has anything to win.
+        //
+        // "Had members" is the live roster OR the snapshot taken at StartCombat. The snapshot is
+        // what lets converting the last enemy win: the live roster then has no Enemy left, which
+        // on its own reads as "never had any" and would leave combat Ongoing forever. Before
+        // StartCombat the snapshot is all false, so the live roster alone decides, as it always did.
         public CombatEndResult CheckCombatEndCondition()
         {
-            bool hasPlayerUnits = false;
-            bool hasEnemyUnits = false;
+            bool hasPlayerUnits = encounterHadPlayers;
+            bool hasEnemyUnits = encounterHadEnemies;
             bool anyPlayerStanding = false;
             bool anyEnemyStanding = false;
 
@@ -200,15 +488,19 @@ namespace Tactica.Combat
                     continue;
                 }
 
-                if (unit.IsPlayerControlled)
+                switch (unit.CurrentFaction)
                 {
-                    hasPlayerUnits = true;
-                    anyPlayerStanding |= !unit.IsKnockedOut;
-                }
-                else
-                {
-                    hasEnemyUnits = true;
-                    anyEnemyStanding |= !unit.IsKnockedOut;
+                    case Faction.Player:
+                        hasPlayerUnits = true;
+                        anyPlayerStanding |= !unit.IsKnockedOut;
+                        break;
+
+                    case Faction.Enemy:
+                        hasEnemyUnits = true;
+                        anyEnemyStanding |= !unit.IsKnockedOut;
+                        break;
+
+                    // Faction.Neutral: deliberately ignored, per the note above.
                 }
             }
 
@@ -253,17 +545,21 @@ namespace Tactica.Combat
 
             initiativeOrder.AddRange(ordered);
 
-            // Snapshot, not a live view: Speed changes mid-combat (haste, slow) will not reshuffle
-            // an encounter already underway. Fine for fixed turn order; a CT/charge-time system
-            // like FFT's would instead recompute who acts next after every turn, which is a change
-            // to this method rather than to its callers.
+            // Only a tie-break order now. Speed changes mid-combat (haste, slow) still take effect
+            // immediately, because Tick reads live Speed every clock tick.
+        }
+
+        private void SnapshotStartingSides()
+        {
+            encounterHadPlayers = initiativeOrder.Any(unit => unit.CurrentFaction == Faction.Player);
+            encounterHadEnemies = initiativeOrder.Any(unit => unit.CurrentFaction == Faction.Enemy);
         }
 
         private string DescribeOrder()
         {
             return string.Join(
                 ", ",
-                initiativeOrder.Select((unit, index) => $"{index + 1}. {unit.name} (SPD {unit.EffectiveStats.Speed})"));
+                initiativeOrder.Select((unit, index) => $"{index + 1}. {unit.DisplayName} (SPD {unit.EffectiveStats.Speed})"));
         }
 
         [ContextMenu("End Current Turn")]

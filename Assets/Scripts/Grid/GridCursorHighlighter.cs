@@ -1,6 +1,6 @@
+using System;
 using UnityEngine;
 using UnityEngine.Serialization;
-using Tactica.Combat;
 
 namespace Tactica.Grid
 {
@@ -25,15 +25,22 @@ namespace Tactica.Grid
         [FormerlySerializedAs("Cam")]
         [SerializeField] private Camera cam;
 
-        [Tooltip("Decides what a click means. Defaults to the first one in the scene. Without it " +
-                 "hover still works but clicks do nothing.")]
-        [SerializeField] private PlayerActionController actionController;
-
         [Tooltip("Log each coordinate as the cursor enters it. Debugging aid only.")]
         [FormerlySerializedAs("LogHoveredCoords")]
         [SerializeField] private bool logHoveredCoords;
 
         private Vector2Int? lastLoggedCoords;
+
+        // A left click on a tile that is not under UI. This component owns the raycast, not the
+        // rules: PlayerActionController subscribes and decides what the click means.
+        //
+        // An event rather than a PlayerActionController field - that field was the only reason
+        // Grid referenced Combat at all, and with it gone the Grid -> Combat edge is broken.
+        public event Action<Vector2Int> TileClicked;
+
+        // The tile under the cursor this frame, or null when off the board or over UI. Polled by
+        // the HUD's targeting preview.
+        public Vector2Int? HoveredTile { get; private set; }
 
         private void Awake()
         {
@@ -52,11 +59,6 @@ namespace Tactica.Grid
             if (cam == null)
             {
                 cam = Camera.main;
-            }
-
-            if (actionController == null)
-            {
-                actionController = FindAnyObjectByType<PlayerActionController>();
             }
         }
 
@@ -105,6 +107,7 @@ namespace Tactica.Grid
             // pointer returned to the board.
             if (GridInput.IsPointerOverUI())
             {
+                HoveredTile = null;
                 grid.SetHoveredTile(null);
                 return;
             }
@@ -113,6 +116,7 @@ namespace Tactica.Grid
                 ? coords
                 : (Vector2Int?)null;
 
+            HoveredTile = hoveredCoords;
             grid.SetHoveredTile(hoveredCoords);
 
             if (logHoveredCoords)
@@ -122,20 +126,8 @@ namespace Tactica.Grid
 
             if (hoveredCoords.HasValue && GridInput.WasLeftClickThisFrame())
             {
-                HandleLeftClick(hoveredCoords.Value);
+                TileClicked?.Invoke(hoveredCoords.Value);
             }
-        }
-
-        // Reports the clicked tile and lets PlayerActionController decide what it means - move,
-        // ability target, or cancel. This component owns the raycast, not the rules.
-        private void HandleLeftClick(Vector2Int coords)
-        {
-            if (actionController == null)
-            {
-                return;
-            }
-
-            actionController.HandleTileClicked(coords);
         }
 
         // Otherwise the last hovered tile stays lit with nothing left running to clear it.

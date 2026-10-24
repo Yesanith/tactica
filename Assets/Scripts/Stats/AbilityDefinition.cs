@@ -15,8 +15,8 @@ namespace Tactica.Stats
         [Min(0)]
         [SerializeField] private int mpCost;
 
-        [Tooltip("Targeting reach in tiles, as 8-directional (Chebyshev) step distance - a " +
-                 "diagonal neighbour counts as 1, the same metric movement range uses. " +
+        [Tooltip("Targeting reach in orthogonal (Manhattan) steps - the same metric as movement, " +
+                 "so a range-1 ability reaches the four adjacent tiles. Ignores walls and height. " +
                  "Range 0 means self-only.")]
         [Min(0)]
         [SerializeField] private int range = 1;

@@ -22,6 +22,7 @@ MonoBehaviour:
     Speed: 6
     Move: 2
     Jump: 1
+    Evasion: 10
   statGrowthPerLevel:
     MaxHP: 3
     MaxMP: 1
@@ -31,6 +32,11 @@ MonoBehaviour:
     Speed: 1
     Move: 0
     Jump: 0
+    Evasion: 0
   abilityUnlocks:
   - RequiredLevel: 1
     Ability: {fileID: 11400000, guid: a76f020b29ce16f4ca3567725fb009aa, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: cb35f579d6cb4e5bba1d9efe7b4c9c08, type: 2}
+  - RequiredLevel: 2
+    Ability: {fileID: 11400000, guid: 5649a5da4ddd4675823971d62eaab732, type: 2}

@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ad3a5760a0d1c1a4d93dbf144ca419a0, type: 3}
   m_Name: Gooner
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
-  jobName: New Job
+  jobName: Gooner
   baseStats:
     MaxHP: 15
     MaxMP: 20
@@ -22,6 +22,7 @@ MonoBehaviour:
     Speed: 9
     Move: 1
     Jump: 1
+    Evasion: 20
   statGrowthPerLevel:
     MaxHP: 1
     MaxMP: 1
@@ -31,6 +32,9 @@ MonoBehaviour:
     Speed: 1
     Move: 0
     Jump: 0
+    Evasion: 0
   abilityUnlocks:
   - RequiredLevel: 1
     Ability: {fileID: 11400000, guid: 2618bd2d6f8374640bdfc10b91441687, type: 2}
+  - RequiredLevel: 3
+    Ability: {fileID: 11400000, guid: 5649a5da4ddd4675823971d62eaab732, type: 2}

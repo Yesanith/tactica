@@ -17,7 +17,7 @@ namespace Tactica.UI
         // TextMeshProUGUI rather than the TMP_Text base class: this panel is uGUI-only by
         // design, and the concrete type makes that a compile error rather than a runtime surprise
         // if a 3D TextMeshPro component is ever dragged in by mistake.
-        [Tooltip("Placeholder: shows JobDefinition.JobName until units have their own names.")]
+        [Tooltip("Shows GridUnit.DisplayName - the unit's own name, or its job name if it has none.")]
         [SerializeField] private TextMeshProUGUI nameLabel;
 
         [SerializeField] private TextMeshProUGUI levelLabel;
@@ -31,8 +31,12 @@ namespace Tactica.UI
         [SerializeField] private TextMeshProUGUI mpLabel;
 
         [Header("Faction Colours")]
+        // Same three colours as UnitStatusBar, deliberately duplicated as serialized fields rather
+        // than shared: these are per-panel art, and a HUD panel may well want a different tone from
+        // a bar floating over the board. Keep them in sync by eye.
         [SerializeField] private Color allyColor = new Color(0.25f, 0.85f, 0.3f);
         [SerializeField] private Color enemyColor = new Color(0.9f, 0.25f, 0.25f);
+        [SerializeField] private Color neutralColor = new Color(0.95f, 0.75f, 0.2f);
 
         private GridUnit boundUnit;
 
@@ -55,14 +59,7 @@ namespace Tactica.UI
                 return;
             }
 
-            // JobName, not the GameObject name: a placeholder until units carry their own names.
-            // Falls back to the GameObject name when no job is assigned, so an unconfigured unit
-            // still identifies itself instead of showing an empty box.
-            string displayName = boundUnit.CurrentJob != null
-                ? boundUnit.CurrentJob.JobName
-                : boundUnit.name;
-
-            SetText(nameLabel, displayName);
+            SetText(nameLabel, boundUnit.DisplayName);
             SetText(levelLabel, $"Lv.{boundUnit.Level}");
 
             int hp = boundUnit.CurrentStats.HP;
@@ -78,8 +75,22 @@ namespace Tactica.UI
 
             if (hpFill != null)
             {
-                hpFill.color = boundUnit.IsPlayerControlled ? allyColor : enemyColor;
+                hpFill.color = ColorFor(boundUnit.CurrentFaction);
             }
+        }
+
+        // Mirrors UnitStatusBar.ColorFor - every member listed, so a future faction shows up as a
+        // missing case rather than silently painting itself ally-green.
+        private Color ColorFor(Faction faction)
+        {
+            switch (faction)
+            {
+                case Faction.Player: return allyColor;
+                case Faction.Enemy: return enemyColor;
+                case Faction.Neutral: return neutralColor;
+            }
+
+            return neutralColor;
         }
 
         private void ClearLabels()

@@ -32,6 +32,10 @@ namespace Tactica.Combat
                  "first CombatManager in the scene. Without it no action is ever accepted.")]
         [SerializeField] private CombatManager combatManagerRef;
 
+        [Tooltip("Source of board clicks. Defaults to the first GridCursorHighlighter in the " +
+                 "scene. Without it the HUD still works but clicks on the board do nothing.")]
+        [SerializeField] private GridCursorHighlighter cursorRef;
+
         public PlayerActionMode Mode { get; private set; } = PlayerActionMode.None;
 
         // Raised when the player picks a target, or with null when targeting is abandoned.
@@ -46,6 +50,8 @@ namespace Tactica.Combat
         // The ability chosen for the current Targeting session. Cleared when targeting ends.
         private AbilityDefinition pendingAbility;
 
+        public AbilityDefinition PendingAbility => pendingAbility;
+
         private void Awake()
         {
             if (gridManagerRef == null)
@@ -56,6 +62,11 @@ namespace Tactica.Combat
             if (combatManagerRef == null)
             {
                 combatManagerRef = FindAnyObjectByType<CombatManager>();
+            }
+
+            if (cursorRef == null)
+            {
+                cursorRef = FindAnyObjectByType<GridCursorHighlighter>();
             }
         }
 
@@ -72,6 +83,11 @@ namespace Tactica.Combat
             {
                 combatManagerRef.OnActiveUnitChanged += HandleActiveUnitChanged;
             }
+
+            if (cursorRef != null)
+            {
+                cursorRef.TileClicked += HandleTileClicked;
+            }
         }
 
         private void OnDisable()
@@ -80,19 +96,28 @@ namespace Tactica.Combat
             {
                 combatManagerRef.OnActiveUnitChanged -= HandleActiveUnitChanged;
             }
+
+            if (cursorRef != null)
+            {
+                cursorRef.TileClicked -= HandleTileClicked;
+            }
         }
 
-        // Turn passed to someone else: retire the outgoing unit's range. The new one is NOT drawn -
-        // BeginMove is the only thing that paints it. Showing it automatically lit tiles that
-        // ignored clicks until Move was pressed, which reads as a broken grid rather than a prompt.
+        // Turn passed to someone else: retire the outgoing unit's range and any half-finished
+        // targeting. The new range is NOT drawn - BeginMove is the only thing that paints it.
+        // Showing it automatically lit tiles that ignored clicks until Move was pressed, which
+        // reads as a broken grid rather than a prompt.
         //
-        // This lived on GridManager until the grid stopped knowing about combat. Here it also sits
-        // next to the mode state, so a future "reset to None on turn change" has an obvious home -
-        // today that already happens on the EndTurn path, which is the only way a turn ends.
+        // The mode reset used to rely on Wait being the only way a turn ends. It is not any more:
+        // a retreat aborts combat mid-targeting, and a converted unit can end a fight from the
+        // faction panel. Resetting here covers every route, including the null that ends combat.
         //
         // The unit parameter is unused; kept because the signature is the event's.
         private void HandleActiveUnitChanged(GridUnit unit)
         {
+            CancelTargeting();
+            Mode = PlayerActionMode.None;
+
             if (gridManagerRef != null)
             {
                 gridManagerRef.ClearMoveRangeHighlight();
@@ -115,7 +140,7 @@ namespace Tactica.Combat
             if (unit.HasMovedThisTurn)
             {
                 Debug.Log(
-                    $"{nameof(PlayerActionController)}: {unit.name} has already moved this turn. " +
+                    $"{nameof(PlayerActionController)}: {unit.DisplayName} has already moved this turn. " +
                     "Attack is still available.",
                     this);
                 return;
@@ -126,25 +151,46 @@ namespace Tactica.Combat
             Mode = PlayerActionMode.Moving;
         }
 
-        // Attack: pick an ability, light every tile holding a legal target, and wait for a click.
-        public void BeginAttack()
+        // The abilities the acting unit could choose from right now - its job's unlocks at its level.
+        // Empty when it is not a player unit's turn. The HUD builds its Act menu from this.
+        public List<AbilityDefinition> GetAvailableAbilities()
+        {
+            GridUnit unit = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
+
+            if (unit == null || unit.CurrentFaction != Faction.Player || unit.CurrentJob == null)
+            {
+                return new List<AbilityDefinition>();
+            }
+
+            return unit.CurrentJob.GetUnlockedAbilities(unit.Level);
+        }
+
+        // Act: light every tile holding a legal target for the chosen ability, and wait for a click.
+        // The ability comes from the HUD's Act menu; this replaced a placeholder that always used
+        // the job's first unlock.
+        public bool BeginAttack(AbilityDefinition ability)
         {
             GridUnit unit = GetActionableUnit();
 
-            if (unit == null)
+            if (unit == null || ability == null)
             {
-                return;
+                return false;
             }
 
-            AbilityDefinition ability = SelectAbility(unit);
+            // One action per turn, FFT's rule. Moving is still allowed afterwards.
+            if (unit.HasActedThisTurn)
+            {
+                Debug.Log($"{nameof(PlayerActionController)}: {unit.DisplayName} has already acted this turn.", this);
+                return false;
+            }
 
-            if (ability == null)
+            if (unit.CurrentStats.MP < ability.MPCost)
             {
                 Debug.Log(
-                    $"{nameof(PlayerActionController)}: {unit.name} has no usable ability. " +
-                    "Check the job's Ability Unlocks list and the unit's Level.",
+                    $"{nameof(PlayerActionController)}: {unit.DisplayName} lacks MP for {ability.AbilityName} " +
+                    $"({unit.CurrentStats.MP}/{ability.MPCost}).",
                     this);
-                return;
+                return false;
             }
 
             List<Vector2Int> targets = FindTargetableTiles(unit, ability);
@@ -152,7 +198,7 @@ namespace Tactica.Combat
             if (targets.Count == 0)
             {
                 Debug.Log($"{nameof(PlayerActionController)}: no valid targets for {ability.AbilityName}.", this);
-                return;
+                return false;
             }
 
             pendingAbility = ability;
@@ -166,6 +212,32 @@ namespace Tactica.Combat
             Mode = PlayerActionMode.Targeting;
 
             Debug.Log($"{nameof(PlayerActionController)}: targeting with {ability.AbilityName} ({targets.Count} target(s)).", this);
+            return true;
+        }
+
+        // What the pending ability would do to whoever stands on coords, or null when that tile is
+        // not a legal target right now. Drives the HUD's targeting preview.
+        public string DescribeTargetPreview(Vector2Int coords)
+        {
+            if (Mode != PlayerActionMode.Targeting || pendingAbility == null || gridManagerRef == null)
+            {
+                return null;
+            }
+
+            if ((gridManagerRef.GetTileHighlightState(coords) & TileHighlightState.Attackable) == 0)
+            {
+                return null;
+            }
+
+            GridUnit user = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
+            GridUnit target = GetUnitAt(coords);
+
+            if (user == null || target == null)
+            {
+                return null;
+            }
+
+            return combatManagerRef.Resolver.DescribeOutcome(user, target, pendingAbility);
         }
 
         // Wait: end the turn, taking a defensive stance if the unit held its attack.
@@ -177,9 +249,17 @@ namespace Tactica.Combat
         {
             GridUnit unit = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
 
+            // Same ownership gate as GetActionableUnit. Without it, pressing Wait during an AI turn
+            // ended that turn for the AI - and handed it a defensive stance nobody chose.
+            if (unit == null || unit.CurrentFaction != Faction.Player)
+            {
+                Debug.Log($"{nameof(PlayerActionController)}: not a player unit's turn - Wait ignored.", this);
+                return;
+            }
+
             // Not GetActionableUnit: that refuses outside WaitingForInput, and the stance must not
             // silently fail to apply while still ending the turn below.
-            if (unit != null && !unit.HasAttackedThisTurn)
+            if (!unit.HasActedThisTurn)
             {
                 unit.BeginDefending();
             }
@@ -247,7 +327,7 @@ namespace Tactica.Combat
             // not only the button that usually starts one.
             if (unit.HasMovedThisTurn)
             {
-                Debug.Log($"{nameof(PlayerActionController)}: {unit.name} has already moved this turn.", this);
+                Debug.Log($"{nameof(PlayerActionController)}: {unit.DisplayName} has already moved this turn.", this);
                 Mode = PlayerActionMode.None;
                 return;
             }
@@ -312,32 +392,38 @@ namespace Tactica.Combat
             // not forfeit the defensive stance Wait would otherwise grant.
             if (success)
             {
-                user.MarkAttacked();
+                user.MarkActed();
             }
 
             Debug.Log($"[{(success ? "OK" : "REJECTED")}] {message}", this);
 
+            // Clean up FIRST, then ask whether that ended the fight.
+            //
+            // The clean-up runs either way, combat over or not: the Attackable highlights belong to
+            // this controller, and the OnActiveUnitChanged(null) that TryEndCombatNow raises only
+            // clears the move-range layer. Skipping it on a win would leave the losing side's tiles
+            // lit over a finished encounter.
+            //
+            // Order matters the other way too - TryEndCombatNow raises that event synchronously, so
+            // a listener reading Mode from inside the handler must see the settled value. Same rule
+            // CombatManager follows when it fires OnActiveUnitChanged last.
             CancelTargeting();
             Mode = PlayerActionMode.None;
-        }
 
-        // PLACEHOLDER: first unlocked ability, standing in for a real ability-selection menu.
-        // Once that menu exists it picks the ability and calls BeginAttack with it; this method
-        // is the only thing that changes.
-        private static AbilityDefinition SelectAbility(GridUnit unit)
-        {
-            if (unit.CurrentJob == null)
+            // Only on success: a rejected ability changed no HP, so no side can have been emptied
+            // by it. Closes the gap where knocking out the last enemy left combat running until the
+            // player pressed Wait.
+            if (success && combatManagerRef.TryEndCombatNow())
             {
-                return null;
+                Debug.Log(
+                    $"{nameof(PlayerActionController)}: that action ended the encounter - no " +
+                    "further input accepted.",
+                    this);
             }
-
-            List<AbilityDefinition> unlocked = unit.CurrentJob.GetUnlockedAbilities(unit.Level);
-
-            return unlocked.Count > 0 ? unlocked[0] : null;
         }
 
         // Every tile within the ability's range holding a unit the resolver considers a legal
-        // target. Uses GetGridDistance (Chebyshev, path-independent) rather than the move-range
+        // target. Uses GetGridDistance (Manhattan, path-independent) rather than the move-range
         // flood fill - reach does not care about walls or occupancy, and the flood fill excludes
         // occupied tiles, which is every target by definition.
         private List<Vector2Int> FindTargetableTiles(GridUnit user, AbilityDefinition ability)
@@ -353,7 +439,9 @@ namespace Tactica.Combat
 
                 GridUnit occupant = GetUnitAt(entry.Key);
 
-                if (occupant == null || occupant.IsKnockedOut)
+                // Knocked-out occupants are left to IsValidTarget: they are illegal for everything
+                // except Revive, and only the resolver knows which ability is which.
+                if (occupant == null)
                 {
                     continue;
                 }
@@ -394,7 +482,18 @@ namespace Tactica.Combat
                 return null;
             }
 
-            return combatManagerRef.GetActiveUnit();
+            GridUnit unit = combatManagerRef.GetActiveUnit();
+
+            // Only units on the Player side take orders from here. Without this gate the HUD drove
+            // whichever unit held the turn - press Move during an AI turn and the player walked the
+            // enemy around. EnemyAIController handles every other faction.
+            if (unit == null || unit.CurrentFaction != Faction.Player)
+            {
+                Debug.Log($"{nameof(PlayerActionController)}: input ignored, not a player unit's turn.", this);
+                return null;
+            }
+
+            return unit;
         }
 
         private void CancelTargeting()

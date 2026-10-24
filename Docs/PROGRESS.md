@@ -8,7 +8,7 @@
 > High-level by design. If you need the mechanism, the invariant, or the gotcha, it is in
 > ARCHITECTURE.md.
 
-Last updated 2026-08-17.
+Last updated 2026-10-24.
 
 ---
 
@@ -30,7 +30,7 @@ Last updated 2026-08-17.
 
 ### Phase 0 — Setup
 
-Unity 6000.5.2f1 on URP, with Active Input Handling set to **Input System package only**. Five
+Unity 6000.5.2f1 on URP (since upgraded to 6000.6.7f1), with Active Input Handling set to **Input System package only**. Five
 namespaces (`Grid`, `Camera`, `Stats`, `Combat`, `UI`), each mapping 1:1 to a folder under
 `Assets/Scripts/`. `.gitignore` audited so nothing outside the project itself is tracked.
 
@@ -118,24 +118,113 @@ that waited would be taking a decision nobody made.
 
 *Deferred:* target selection is a placeholder heuristic — see below.
 
+*Follow-up, since:* combat now ends **the moment the last unit on a side goes down**, not at the
+next turn boundary. `CombatManager.TryEndCombatNow()` holds the transition, and both controllers
+call it right after an attack lands — not `ActionResolver`, which stays a plain C# object with no
+scene dependency so combat maths remains testable without a scene. Before this, knocking out the
+final enemy left the fight running until the player pressed Wait, with corpses still targetable.
+
 ---
 
 ## Currently working on
 
 ### Phase 7 — Recruitment / Mission Flow
 
-Not started. Combat is playable end to end; what is missing is everything around it — a roster that
-persists between fights, units joining it, and missions to spend them on.
+**Prototype loop in place.** Main menu → headquarters → roster / recruit / mission select → combat
+→ result screen → headquarters, with a JSON save. Menus are deliberately bare — black background,
+grey buttons, built in code — because their job right now is to make factions and recruitment
+*testable*, not to be the UI. A new `Tactica.Campaign` namespace holds the data and rules
+(`CampaignState`, plain C#) and the one scene-facing piece (`MissionRunner`, which spawns units and
+reports results); `CampaignMenu` in `UI` drives both and boots itself, so no scene edit was needed.
 
-**Blocker carried over from Phase 6.** There is still no faction system. `GridUnit.isPlayerControlled`
-is a bool and `ActionResolver` treats *any* unit that is not the user as an enemy — the same missing
-concept seen from two sides. The AI works today only because every encounter is one side against
-one other; it cannot be told not to attack its own allies, which a third party or a charmed unit
-would require immediately. Recruitment makes this urgent rather than theoretical, since a recruited
-unit changes side by definition.
+*Decisions:* missions carry **no map data** — spawn tiles are chosen per side at runtime, so a
+mission is only "who you fight". Roster units carry **no HP** between fights; persistent damage
+needs a rest/heal system to mean anything. After a **victory** any opponent can be recruited, the
+defeated included; after a defeat or retreat only those who **ended on the Player side** can — which
+makes a mid-fight `SetFaction` a recruitment. A won mission gives deployed survivors **+1 level**,
+labelled as a stand-in for XP. An in-combat **Units / Factions** panel cycles any unit's side, as the
+test bench for all of this.
 
-**Also relevant.** Runtime unit spawning already works — unit status bars are built entirely in
-code precisely so a unit that does not exist at author time can still have one.
+*Since:* KO'd units **no longer take turns** — with several units a side, waiting through every
+corpse was most of a round. They still occupy their tile.
+
+**Blocker cleared: factions are real now.** The `isPlayerControlled` bool became a
+`Faction { Player, Enemy, Neutral }` enum owned by `GridUnit`, with `SetFaction` as the entry point
+recruitment will call. `ActionResolver.IsValidTarget` compares factions instead of treating anyone
+who is not the caster as an enemy, so allies can no longer be attacked and `TargetsAllies` —
+previously able to hit nobody at all — works. `CheckCombatEndCondition` counts Player and Enemy
+only. This was done ahead of recruitment on purpose: a recruited unit changes side by definition, so
+the concept had to exist before the feature that needs it.
+
+*Decisions:* `Neutral` is included but unused, because adding an enum member later is free and
+migrating serialized data twice is not. Its hostility is **provisional** — the only rule is
+"different faction is a valid target", so a neutral is currently attackable by both sides. That is
+right for wild creatures and wrong for a recruitable villager, and the real answer is a
+per-faction relationship table, since hostility is not symmetric. Flagged in
+`ActionResolver.IsValidTarget` rather than silently decided.
+
+**Edge case fixed with it.** Converting the *last* enemy used to leave combat `Ongoing` forever: the
+empty-side guard in `CheckCombatEndCondition` could not tell "never had enemies" from "converted
+them all". `StartCombat` now snapshots which sides were present, and the guard reads that.
+
+**Still open in Phase 7:** a real neutral hostility table, persistent HP, XP, and mission objectives
+beyond "one side is down".
+
+**Refactor pass (2026-10-24).** A full read of every script, then targeted fixes rather than
+rewrites — most of the code's oddities are documented decisions, and those were left alone.
+
+- *Bug fixed:* the HUD drove whichever unit held the turn. Move during an AI turn walked the enemy;
+  Wait ended the AI's turn and gave it a stance. Player input now refuses non-Player units, and the
+  buttons grey out on other turns.
+- *Both namespace cycles broken,* each by turning a field into an event:
+  `GridCursorHighlighter.TileClicked` (Grid ↔ Combat) and `GridUnit.Spawned` / `StatsChanged`
+  with a self-attaching `UnitStatusBar` (Grid ↔ UI). `Grid` now depends only on `Stats`, so an
+  asmdef split is possible.
+- *Scaffolding removed:* MP spending goes through `GridUnit.SpendMP`, so `ActionResolver` no longer
+  pokes the status bar. `GridUnit.OnDestroy` releases its tile.
+- *Smaller:* targeting resets on every turn change, not only on Wait; logs and messages use unit
+  names; the ability-range tooltip no longer claims movement uses the same metric.
+
+**FFT systems, cyberpunk-flavoured (2026-10-24).** The first five roadmap items from the FFT notes:
+
+- *CT clock* replaces fixed initiative: Speed fills CT each tick, 100 takes a turn, the turn costs
+  100 / 80 / 60 by move-and-act / one / neither, carry-over capped at 60. A **Turn Queue** strip
+  forecasts the next 8 turns.
+- *One action per turn* through an **Act** menu listing every unlocked ability — this also retired
+  the "first unlocked ability" placeholder on the player side.
+- *Flatline* (FFT's death counter): a downed unit has three of its own turns; then it is gone, and a
+  flatlined crew member is removed from the roster for good. **Reboot Protocol** (Lv2 Cyber Knight)
+  brings one back before that.
+- *System Override* (FFT's Invite) hacks a unit onto your side, `Power + Magic`% (≈41% at Lv2).
+  Recruitment after a contract now requires it: the result screen no longer hands out every
+  defeated enemy.
+- *Targeting preview* — damage and resulting HP, or hack chance, before committing.
+- Menus and contracts renamed to the setting: Safehouse, Contracts, Crew, Hire Runners, Jack Out.
+
+*Decisions:* knocked-out units keep charging CT so the flatline deadline runs on the same clock as
+everything else (fast units go down faster, as in FFT). `Heal` refuses the knocked out, so standing
+someone up always goes through Revive and clears the counter. Wait keeps its defensive stance on top
+of the cheaper CT cost for now — flagged in ARCHITECTURE.md as a double reward to revisit with facing.
+
+**Second FFT pass (2026-10-24).**
+
+- *Facing and evasion:* units face where they walked and what they hit; a neon visor shows it.
+  Physical hits roll against the target's Evasion — full from the front, half from the side, none
+  from behind, doubled while defending. Cyber Knights 10%, Gooners 20%.
+- *Manhattan movement and range,* replacing 8-directional movement with a one-diagonal limit. Closes
+  the known "diagonals are strictly better" problem; movement and range now share one metric. Each
+  unit's Jump is the climb limit.
+- *AI reboots* downed allies it can reach; Gooners learn Reboot at level 3.
+- *Objectives:* Neutralize (win when the target drops or is hacked) and Protect (lose when the guest
+  drops), with two new contracts — **Cut the Signal** and **Courier Run** — and the objective shown
+  in combat.
+
+*Decisions:* objectives only ever end a fight early; the side-is-down end condition still holds for
+every mission. Facing is automatic for now — FFT's end-of-turn facing choice is the next UI step.
+
+**FFT research.** [FFT_DESIGN_NOTES.md](FFT_DESIGN_NOTES.md) records how Final Fantasy Tactics'
+systems work, with numbers from the Battle Mechanics Guide, why each works, and a prioritised list
+of what fits Tactica — one action per turn and a CT turn system first.
 
 ---
 

@@ -562,8 +562,6 @@ just decisions made once so they do not get re-litigated.
 
 - **Persistent HP between fights.** Pools refill at every spawn. Carrying damage over only means
   something with a way to recover it (rest, items, clinics), which the city map does not have yet.
-- **AI that changes behaviour when hurt** (retreat, play safe). The scored AI (Phase 13) already
-  heals, reboots and buffs; fleeing needs maps with somewhere worth fleeing to.
 - **Enemies that hack the player's crew.** The AI already scores Override and would use it, but no
   enemy job is given one: a crew member lost to a hack needs a counterplay story first.
 - **Status icons.** Stance and statuses show as text tags in the status bar and as callouts; icons

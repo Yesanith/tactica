@@ -43,6 +43,72 @@ namespace Tactica.Stats
         // When those land, replace this with a TargetingRule type (a small serialisable class, or
         // its own asset for reuse across abilities) rather than adding a fourth and fifth bool -
         // the combinatorics get unreadable fast, and half the combinations are meaningless.
+        [Header("Scaling and weapon")]
+        [Tooltip("Stat added to Power: Strength for physical, Tech for hacks and medicine.")]
+        [SerializeField] private StatScaling scaling = StatScaling.Strength;
+
+        [Tooltip("Adds the equipped weapon's Power, and uses the weapon's range and blast if " +
+                 "larger. The basic Attack is just this with Power 0.")]
+        [SerializeField] private bool usesWeapon;
+
+        [Header("Status (Buff / Debuff / StatusEffect)")]
+        [Tooltip("Stat change while the status lasts. Negative fields for a debuff.")]
+        [SerializeField] private CharacterStats statModifier;
+
+        [SerializeField] private StatusKind statusKind = StatusKind.None;
+
+        [Tooltip("In the affected unit's own turns.")]
+        [Min(0)]
+        [SerializeField] private int duration = 2;
+
+        [Header("Reaction / Support")]
+        [SerializeField] private ReactionKind reactionKind = ReactionKind.None;
+
+        [Tooltip("Percent chance a reaction fires when its owner is hit.")]
+        [Range(0, 100)]
+        [SerializeField] private int triggerChance = 50;
+
+        [Tooltip("Support: weapon type this ability lets any job equip (Equip X).")]
+        [SerializeField] private WeaponType equipWeapon = WeaponType.None;
+
+        [Tooltip("Support: extra JP earned, in percent (JP Boost).")]
+        [Min(0)]
+        [SerializeField] private int jpBonusPercent;
+
+        [Header("Progression")]
+        [Tooltip("Which slot this ability occupies. Only Action abilities appear in the Act menu.")]
+        [SerializeField] private AbilitySlot slot = AbilitySlot.Action;
+
+        [Tooltip("JP to learn it in its job. 0 for abilities nobody buys - enemy kits.")]
+        [Min(0)]
+        [SerializeField] private int jpCost;
+
+        [Tooltip("Weapon the user must have equipped to use it. None for anything usable unarmed.")]
+        [SerializeField] private WeaponType requiredWeapon = WeaponType.None;
+
+        [Header("Special rules")]
+        [Tooltip("Damage only: a hit that lands also applies this ability's status - its stat " +
+                 "modifier, kind and duration. A marking shot, a disarming cut.")]
+        [SerializeField] private bool inflictsStatus;
+
+        [Tooltip("Override only: extra percent chance against a target below half HP (Hijack).")]
+        [Min(0)]
+        [SerializeField] private int woundedBonus;
+
+        [Tooltip("Override only: percent of the usual chance against bosses. 100 = no change; " +
+                 "Mass Override uses 50.")]
+        [Range(0, 100)]
+        [SerializeField] private int bossChancePercent = 100;
+
+        [Tooltip("Support: the user's harmful area abilities spare its own side (Friendly Fuse).")]
+        [SerializeField] private bool sparesAllies;
+
+        [Tooltip("Clock ticks between choosing the ability and it going off - FFT's charge time. " +
+                 "0 is instant. The aim point is fixed when chosen; it hits whoever stands there " +
+                 "when it fires, and is cancelled if the user is knocked out first.")]
+        [Min(0)]
+        [SerializeField] private int chargeTime;
+
         [Header("Valid Targets")]
         [SerializeField] private bool targetsSelf;
         [SerializeField] private bool targetsAllies;
@@ -57,6 +123,33 @@ namespace Tactica.Stats
         public int AreaOfEffect => areaOfEffect;
         public AbilityEffectType EffectType => effectType;
         public int Power => power;
+        public StatScaling Scaling => scaling;
+        public bool UsesWeapon => usesWeapon;
+        public CharacterStats StatModifier => statModifier;
+        public StatusKind StatusKind => statusKind;
+        public int Duration => duration;
+        public ReactionKind ReactionKind => reactionKind;
+        public int TriggerChance => triggerChance;
+        public WeaponType EquipWeapon => equipWeapon;
+        public int JPBonusPercent => jpBonusPercent;
+        public bool InflictsStatus => inflictsStatus;
+        public int WoundedBonus => woundedBonus;
+        public int BossChancePercent => bossChancePercent;
+        public bool SparesAllies => sparesAllies;
+        public int ChargeTime => chargeTime;
+
+        // Hurts its targets rather than helping them, which decides friendly fire: a harmful area
+        // ability hits everyone in the blast, a helpful one only those it may target.
+        public bool IsHarmful =>
+            effectType == AbilityEffectType.Damage
+            || effectType == AbilityEffectType.Debuff
+            || effectType == AbilityEffectType.Override
+            || (effectType == AbilityEffectType.StatusEffect
+                && (statusKind == StatusKind.Stun || statusKind == StatusKind.DamageOverTime));
+
+        public AbilitySlot Slot => slot;
+        public int JPCost => jpCost;
+        public WeaponType RequiredWeapon => requiredWeapon;
 
         public bool TargetsSelf => targetsSelf;
         public bool TargetsAllies => targetsAllies;

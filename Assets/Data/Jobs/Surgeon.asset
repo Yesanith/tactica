@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad3a5760a0d1c1a4d93dbf144ca419a0, type: 3}
+  m_Name: Surgeon
+  m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
+  jobName: Surgeon
+  baseStats:
+    MaxHP: 17
+    MaxMP: 18
+    Strength: 4
+    Tech: 9
+    Defense: 3
+    Speed: 6
+    Move: 3
+    Jump: 1
+    Evasion: 10
+  statGrowthPerLevel:
+    MaxHP: 2
+    MaxMP: 2
+    Strength: 1
+    Tech: 2
+    Defense: 1
+    Speed: 1
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  abilityUnlocks:
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: a435b0652cbe86849b5c8ccfae86608b, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: b94bd3f023889144eb2c4a5523096d4c, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 1cf00db2daad16f43804a90f43bf4565, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 5a5d1333513d7fa47ac9d8f49fc30a04, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: add7fc0c9d46098489e90f290172ee80, type: 2}
+  tier: 1
+  prerequisites:
+  - job: {fileID: 11400000, guid: 4192de1eb5a6fe3449f6384c93137b24, type: 2}
+    level: 3
+  allowedWeapons: 06000000i
+  isFixedKit: 0
+  defaultWeapon: {fileID: 11400000, guid: ec2ec2c057959a944a142451340647b1, type: 2}
+  model: {fileID: 100046, guid: f671e87896ed58c4e972db58101c2d27, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

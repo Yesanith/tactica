@@ -13,12 +13,33 @@ MonoBehaviour:
   m_Name: DigitalBash
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.AbilityDefinition
   abilityName: Digital Bash
-  description: Use your DigiShield and bash an enemy.
+  description: Shield bash with the DigiShield.
   mpCost: 0
   range: 1
   areaOfEffect: 0
   effectType: 0
   power: 5
+  scaling: 0
+  usesWeapon: 0
+  statModifier:
+    MaxHP: 0
+    MaxMP: 0
+    Strength: 0
+    Tech: 0
+    Defense: 0
+    Speed: 0
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  statusKind: 0
+  duration: 2
+  reactionKind: 0
+  triggerChance: 50
+  equipWeapon: 0
+  jpBonusPercent: 0
+  slot: 0
+  jpCost: 100
+  requiredWeapon: 0
   targetsSelf: 0
   targetsAllies: 0
   targetsEnemies: 1

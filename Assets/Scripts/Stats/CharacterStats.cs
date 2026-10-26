@@ -12,7 +12,10 @@ namespace Tactica.Stats
         public int MaxMP;
 
         public int Strength;
-        public int Magic;
+        // Hack and medical aptitude: Override chance today, hack damage and healing later. Called
+        // Magic until GAME_DESIGN.md named it; FormerlySerializedAs keeps every authored value.
+        [UnityEngine.Serialization.FormerlySerializedAs("Magic")]
+        public int Tech;
 
         // Flat damage reduction, subtracted in ActionResolver.CalculateDamage.
         public int Defense;
@@ -27,16 +30,16 @@ namespace Tactica.Stats
         public int Jump;
 
         // Chance, in percent, to dodge a physical attack from the FRONT. Halved from the side and
-        // ignored from behind - FFT's facing rule, simplified to one number. Magic-like effects
+        // ignored from behind - FFT's facing rule, simplified to one number. Tech effects
         // (Override, Reboot) ignore it.
         public int Evasion;
 
-        public CharacterStats(int maxHP, int maxMP, int strength, int magic, int defense, int speed, int move, int jump, int evasion = 0)
+        public CharacterStats(int maxHP, int maxMP, int strength, int tech, int defense, int speed, int move, int jump, int evasion = 0)
         {
             MaxHP = maxHP;
             MaxMP = maxMP;
             Strength = strength;
-            Magic = magic;
+            Tech = tech;
             Defense = defense;
             Speed = speed;
             Move = move;
@@ -61,7 +64,7 @@ namespace Tactica.Stats
                 MaxHP = a.MaxHP + b.MaxHP,
                 MaxMP = a.MaxMP + b.MaxMP,
                 Strength = a.Strength + b.Strength,
-                Magic = a.Magic + b.Magic,
+                Tech = a.Tech + b.Tech,
                 Defense = a.Defense + b.Defense,
                 Speed = a.Speed + b.Speed,
                 Move = a.Move + b.Move,
@@ -83,7 +86,7 @@ namespace Tactica.Stats
                 MaxHP = stats.MaxHP * multiplier,
                 MaxMP = stats.MaxMP * multiplier,
                 Strength = stats.Strength * multiplier,
-                Magic = stats.Magic * multiplier,
+                Tech = stats.Tech * multiplier,
                 Defense = stats.Defense * multiplier,
                 Speed = stats.Speed * multiplier,
                 Move = stats.Move * multiplier,
@@ -94,7 +97,7 @@ namespace Tactica.Stats
 
         public override string ToString()
         {
-            return $"HP {MaxHP} MP {MaxMP} | STR {Strength} MAG {Magic} DEF {Defense} SPD {Speed} | Move {Move} Jump {Jump} EV {Evasion}";
+            return $"HP {MaxHP} MP {MaxMP} | STR {Strength} TECH {Tech} DEF {Defense} SPD {Speed} | Move {Move} Jump {Jump} EV {Evasion}";
         }
     }
 }

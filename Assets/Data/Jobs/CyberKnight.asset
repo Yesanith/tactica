@@ -17,7 +17,7 @@ MonoBehaviour:
     MaxHP: 20
     MaxMP: 10
     Strength: 8
-    Magic: 5
+    Tech: 5
     Defense: 4
     Speed: 6
     Move: 3
@@ -27,7 +27,7 @@ MonoBehaviour:
     MaxHP: 3
     MaxMP: 1
     Strength: 2
-    Magic: 1
+    Tech: 1
     Defense: 1
     Speed: 1
     Move: 0
@@ -37,6 +37,19 @@ MonoBehaviour:
   - RequiredLevel: 1
     Ability: {fileID: 11400000, guid: a76f020b29ce16f4ca3567725fb009aa, type: 2}
   - RequiredLevel: 1
-    Ability: {fileID: 11400000, guid: cb35f579d6cb4e5bba1d9efe7b4c9c08, type: 2}
-  - RequiredLevel: 2
-    Ability: {fileID: 11400000, guid: 5649a5da4ddd4675823971d62eaab732, type: 2}
+    Ability: {fileID: 11400000, guid: 81a10fbfc85fe1543ac8cb5a7b21c0cb, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: be0958ec4ce5f1c448640a3c035fac4f, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: b453ed9027c868a44bf44784297ccd2d, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: a08bc625ddbacdc4b95fc8c9bc389cda, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 18545cc278af4b646ba6426295637b19, type: 2}
+  tier: 0
+  prerequisites: []
+  allowedWeapons: 0100000002000000i
+  isFixedKit: 0
+  defaultWeapon: {fileID: 11400000, guid: 45405172978555748ac11a29c40487dc, type: 2}
+  model: {fileID: 100000, guid: f12f2d44b2688054986e54861cc211dc, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

@@ -16,7 +16,7 @@ namespace Tactica.Stats
         // The only effect that targets the knocked out - FFT's Raise / Phoenix Down.
         Revive = 5,
 
-        // Hacks a unit onto the caster's side. Success chance is Power + the caster's Magic,
+        // Hacks a unit onto the caster's side. Success chance is Power + the caster's Tech,
         // clamped - FFT's Invite, whose base rate is MA + 20. A converted unit fights for its new
         // side from its next turn, and if it ends the mission there it can join the crew.
         Override = 6,

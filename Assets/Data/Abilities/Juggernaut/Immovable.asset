@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6360f27eda9cc464e92c69c63ddee4a6, type: 3}
+  m_Name: Immovable
+  m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.AbilityDefinition
+  abilityName: Immovable
+  description: '60% when hit: +5 Defense for a turn.'
+  mpCost: 0
+  range: 1
+  areaOfEffect: 0
+  effectType: 0
+  power: 0
+  scaling: 0
+  usesWeapon: 0
+  statModifier:
+    MaxHP: 0
+    MaxMP: 0
+    Strength: 0
+    Tech: 0
+    Defense: 5
+    Speed: 0
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  statusKind: 0
+  duration: 1
+  reactionKind: 2
+  triggerChance: 60
+  equipWeapon: 0
+  jpBonusPercent: 0
+  slot: 1
+  jpCost: 400
+  requiredWeapon: 0
+  targetsSelf: 0
+  targetsAllies: 0
+  targetsEnemies: 1

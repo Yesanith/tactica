@@ -13,12 +13,33 @@ MonoBehaviour:
   m_Name: SystemOverride
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.AbilityDefinition
   abilityName: System Override
-  description: Jack into a target's neural link and rewrite its allegiance. Chance: Power + Magic.
-  mpCost: 4
+  description: Rewrite the target's allegiance. Chance 9 + 3x Tech, minus level gap and resistance.
+  mpCost: 6
   range: 3
   areaOfEffect: 0
   effectType: 6
-  power: 35
+  power: 9
+  scaling: 1
+  usesWeapon: 0
+  statModifier:
+    MaxHP: 0
+    MaxMP: 0
+    Strength: 0
+    Tech: 0
+    Defense: 0
+    Speed: 0
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  statusKind: 0
+  duration: 2
+  reactionKind: 0
+  triggerChance: 50
+  equipWeapon: 0
+  jpBonusPercent: 0
+  slot: 0
+  jpCost: 200
+  requiredWeapon: 0
   targetsSelf: 0
   targetsAllies: 0
   targetsEnemies: 1

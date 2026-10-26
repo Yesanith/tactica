@@ -13,12 +13,33 @@ MonoBehaviour:
   m_Name: RebootProtocol
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.AbilityDefinition
   abilityName: Reboot Protocol
-  description: Restart a downed ally's implants before they flatline. Restores Power HP.
+  description: Restart a downed ally's implants before they flatline.
   mpCost: 5
   range: 1
   areaOfEffect: 0
   effectType: 5
-  power: 8
+  power: 2
+  scaling: 1
+  usesWeapon: 0
+  statModifier:
+    MaxHP: 0
+    MaxMP: 0
+    Strength: 0
+    Tech: 0
+    Defense: 0
+    Speed: 0
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  statusKind: 0
+  duration: 2
+  reactionKind: 0
+  triggerChance: 50
+  equipWeapon: 0
+  jpBonusPercent: 0
+  slot: 0
+  jpCost: 200
+  requiredWeapon: 0
   targetsSelf: 0
   targetsAllies: 1
   targetsEnemies: 0

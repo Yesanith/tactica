@@ -24,6 +24,30 @@ namespace Tactica.Stats
         [Tooltip("Abilities this job learns, and the level each becomes available.")]
         [SerializeField] private List<AbilityUnlock> abilityUnlocks = new List<AbilityUnlock>();
 
+        [Header("Progression")]
+        [SerializeField] private JobTier tier = JobTier.Start;
+
+        [Tooltip("Every entry must be met to unlock this job. Empty means open from the start.")]
+        [SerializeField] private List<JobRequirement> prerequisites = new List<JobRequirement>();
+
+        [Tooltip("Weapon types this job can equip without an Equip support ability.")]
+        [SerializeField] private List<WeaponType> allowedWeapons = new List<WeaponType>();
+
+        [Tooltip("Enemy and special jobs: fixed kit, no JP, never offered on the Crew screen.")]
+        [SerializeField] private bool isFixedKit;
+
+        [Tooltip("What a new unit of this job holds, and what fixed-kit enemies always use.")]
+        [SerializeField] private EquipmentDefinition defaultWeapon;
+
+        [Header("Appearance")]
+        [Tooltip("Character model for units of this job, pivot at the feet. Leave empty for the " +
+                 "capsule placeholder - also what a clone without the (git-ignored) model pack gets.")]
+        [SerializeField] private GameObject model;
+
+        [Tooltip("Controller for the model's Animator. Humanoid clips retarget, so one idle can " +
+                 "serve every humanoid model.")]
+        [SerializeField] private RuntimeAnimatorController animatorController;
+
         // Read-only on purpose. A ScriptableObject is a project asset, not per-instance state, so
         // writing to one at runtime edits the asset itself - and in the editor that change sticks
         // after you leave Play mode. Same trap as mutating a sharedMaterial.
@@ -31,6 +55,30 @@ namespace Tactica.Stats
         public CharacterStats BaseStats => baseStats;
         public CharacterStats StatGrowthPerLevel => statGrowthPerLevel;
         public IReadOnlyList<AbilityUnlock> AbilityUnlocks => abilityUnlocks;
+        public JobTier Tier => tier;
+        public IReadOnlyList<JobRequirement> Prerequisites => prerequisites;
+        public IReadOnlyList<WeaponType> AllowedWeapons => allowedWeapons;
+        public bool IsFixedKit => isFixedKit;
+        public EquipmentDefinition DefaultWeapon => defaultWeapon;
+
+        public bool AllowsWeapon(WeaponType weapon)
+        {
+            return weapon == WeaponType.None || allowedWeapons.Contains(weapon);
+        }
+
+        // Every ability this job teaches, in authored order - what the Crew screen offers for JP.
+        public IEnumerable<AbilityDefinition> AllAbilities()
+        {
+            foreach (AbilityUnlock unlock in abilityUnlocks)
+            {
+                if (unlock.IsAssigned)
+                {
+                    yield return unlock.Ability;
+                }
+            }
+        }
+        public GameObject Model => model;
+        public RuntimeAnimatorController AnimatorController => animatorController;
 
         // Stats for a unit at the given job level. Level 1 returns BaseStats unchanged.
         //

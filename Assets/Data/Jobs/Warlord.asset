@@ -1,0 +1,61 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad3a5760a0d1c1a4d93dbf144ca419a0, type: 3}
+  m_Name: Warlord
+  m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
+  jobName: Warlord
+  baseStats:
+    MaxHP: 26
+    MaxMP: 14
+    Strength: 10
+    Tech: 6
+    Defense: 5
+    Speed: 7
+    Move: 3
+    Jump: 1
+    Evasion: 10
+  statGrowthPerLevel:
+    MaxHP: 3
+    MaxMP: 1
+    Strength: 2
+    Tech: 1
+    Defense: 1
+    Speed: 1
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  abilityUnlocks:
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 1a82f4f04264be44ab053c44aff3ef5b, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: d42547c4a4c212b4c80b81902dd7ad76, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 740e7e0cc5e3809418aa0480b39c147f, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 003b2af93d424f94ba772aeeafea79f8, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 36d81af90d4a9b64b837bc2c290641e9, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 09d2f0845bf68e24e91e2937c819ba3e, type: 2}
+  tier: 2
+  prerequisites:
+  - job: {fileID: 11400000, guid: 45e19e20aa4b8174ba29e7680a11c5aa, type: 2}
+    level: 4
+  - job: {fileID: 11400000, guid: fde56223d9c04ed44bc0b87ed47ecdfd, type: 2}
+    level: 3
+  - job: {fileID: 11400000, guid: 9a7b4b27283a52549b57519a9afb9bd5, type: 2}
+    level: 2
+  allowedWeapons: 0700000002000000i
+  isFixedKit: 0
+  defaultWeapon: {fileID: 11400000, guid: f4fab8ec679aa264c83f5fac5f489169, type: 2}
+  model: {fileID: 100000, guid: f12f2d44b2688054986e54861cc211dc, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

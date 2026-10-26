@@ -1,0 +1,53 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad3a5760a0d1c1a4d93dbf144ca419a0, type: 3}
+  m_Name: Phantom
+  m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
+  jobName: Phantom
+  baseStats:
+    MaxHP: 17
+    MaxMP: 10
+    Strength: 9
+    Tech: 4
+    Defense: 3
+    Speed: 9
+    Move: 4
+    Jump: 3
+    Evasion: 25
+  statGrowthPerLevel:
+    MaxHP: 2
+    MaxMP: 1
+    Strength: 2
+    Tech: 1
+    Defense: 1
+    Speed: 1
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  abilityUnlocks:
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: c024ce0b2693cc347a95c8b979010f57, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: c30f8767bb2d636458e3031aba52d308, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 01ace67ed5c8cec4490de40097dd3a26, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 6d1ef2d48acd04d42ade2e316f52a2ae, type: 2}
+  tier: 1
+  prerequisites:
+  - job: {fileID: 11400000, guid: 4606ccb54319b2d439e46310ed617a4b, type: 2}
+    level: 3
+  allowedWeapons: 02000000i
+  isFixedKit: 0
+  defaultWeapon: {fileID: 11400000, guid: c75e321aa2fe35b4e9af2ab7fd09cba4, type: 2}
+  model: {fileID: 100184, guid: d5025efbcc7ae004db8312cd46d86e5d, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

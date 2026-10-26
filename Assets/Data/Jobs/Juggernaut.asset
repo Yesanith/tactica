@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad3a5760a0d1c1a4d93dbf144ca419a0, type: 3}
+  m_Name: Juggernaut
+  m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
+  jobName: Juggernaut
+  baseStats:
+    MaxHP: 32
+    MaxMP: 10
+    Strength: 11
+    Tech: 3
+    Defense: 9
+    Speed: 4
+    Move: 3
+    Jump: 1
+    Evasion: 0
+  statGrowthPerLevel:
+    MaxHP: 4
+    MaxMP: 1
+    Strength: 2
+    Tech: 0
+    Defense: 2
+    Speed: 0
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  abilityUnlocks:
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 9209ad065db096a4195f6a5d4d04d2f5, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 41efc84df84f8b14eb81bf8922cf3d0e, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 1105882fd083d0041a57da03f55ebfdc, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 61d940d973a746b4ca0265be6a9129ee, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 3e6cd9e8b16ff4642a38aebc68bd773f, type: 2}
+  tier: 2
+  prerequisites:
+  - job: {fileID: 11400000, guid: fde56223d9c04ed44bc0b87ed47ecdfd, type: 2}
+    level: 4
+  - job: {fileID: 11400000, guid: 226c19a9f9773e9428a8de07b6ff4aef, type: 2}
+    level: 3
+  allowedWeapons: 0100000004000000i
+  isFixedKit: 0
+  defaultWeapon: {fileID: 11400000, guid: 45405172978555748ac11a29c40487dc, type: 2}
+  model: {fileID: 100000, guid: f12f2d44b2688054986e54861cc211dc, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad3a5760a0d1c1a4d93dbf144ca419a0, type: 3}
+  m_Name: Sniper
+  m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
+  jobName: Sniper
+  baseStats:
+    MaxHP: 16
+    MaxMP: 10
+    Strength: 9
+    Tech: 4
+    Defense: 2
+    Speed: 6
+    Move: 3
+    Jump: 2
+    Evasion: 15
+  statGrowthPerLevel:
+    MaxHP: 2
+    MaxMP: 1
+    Strength: 3
+    Tech: 0
+    Defense: 0
+    Speed: 1
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  abilityUnlocks:
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: d2bff2697a1361b4bacdf55761732b55, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 6cd2467ddd73e4940abcd01a838df014, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 192a9065d134f98479556c33fc6ed7bd, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: f2d62a8af76a9b8469f954b40360df5a, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 827182d2b03e65c43b2c4601b63290f3, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 2c9d8724e9237eb44b1e9670d81cf44f, type: 2}
+  tier: 1
+  prerequisites:
+  - job: {fileID: 11400000, guid: 5cb2205fff668ef479e0cdc677d3f6c5, type: 2}
+    level: 3
+  allowedWeapons: 03000000i
+  isFixedKit: 0
+  defaultWeapon: {fileID: 11400000, guid: 985af6f2cc969aa468531fd2c560a409, type: 2}
+  model: {fileID: 100184, guid: d5025efbcc7ae004db8312cd46d86e5d, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

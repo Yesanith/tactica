@@ -16,8 +16,8 @@ MonoBehaviour:
   baseStats:
     MaxHP: 15
     MaxMP: 20
-    Strength: 1
-    Magic: 1
+    Strength: 3
+    Tech: 1
     Defense: 1
     Speed: 9
     Move: 2
@@ -27,7 +27,7 @@ MonoBehaviour:
     MaxHP: 1
     MaxMP: 1
     Strength: 1
-    Magic: 1
+    Tech: 1
     Defense: 1
     Speed: 1
     Move: 0
@@ -36,5 +36,10 @@ MonoBehaviour:
   abilityUnlocks:
   - RequiredLevel: 1
     Ability: {fileID: 11400000, guid: 2618bd2d6f8374640bdfc10b91441687, type: 2}
-  - RequiredLevel: 3
-    Ability: {fileID: 11400000, guid: 5649a5da4ddd4675823971d62eaab732, type: 2}
+  tier: 0
+  prerequisites: []
+  allowedWeapons: 02000000i
+  isFixedKit: 1
+  defaultWeapon: {fileID: 11400000, guid: c75e321aa2fe35b4e9af2ab7fd09cba4, type: 2}
+  model: {fileID: 100500, guid: 54c925df2b321cd47b92004382c85291, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

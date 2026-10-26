@@ -1,0 +1,55 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad3a5760a0d1c1a4d93dbf144ca419a0, type: 3}
+  m_Name: Blade
+  m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
+  jobName: Blade
+  baseStats:
+    MaxHP: 16
+    MaxMP: 8
+    Strength: 7
+    Tech: 3
+    Defense: 2
+    Speed: 8
+    Move: 4
+    Jump: 2
+    Evasion: 20
+  statGrowthPerLevel:
+    MaxHP: 2
+    MaxMP: 1
+    Strength: 2
+    Tech: 0
+    Defense: 1
+    Speed: 1
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  abilityUnlocks:
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 0400b48436489564a9b037f6da00e9af, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 0e92c5533ca5a2f42ae7d33d75346de0, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 85cfca76ea9843449beed0c5e023783f, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: bf63c83c3f560d343ba9236f9fd27332, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 39c3d0ac2a0bb8b41b8e3359ad2224dc, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 15b4537d112d3c14e8d6436d3ceda2af, type: 2}
+  tier: 0
+  prerequisites: []
+  allowedWeapons: 02000000i
+  isFixedKit: 0
+  defaultWeapon: {fileID: 11400000, guid: c75e321aa2fe35b4e9af2ab7fd09cba4, type: 2}
+  model: {fileID: 100184, guid: d5025efbcc7ae004db8312cd46d86e5d, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad3a5760a0d1c1a4d93dbf144ca419a0, type: 3}
+  m_Name: PatchRat
+  m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
+  jobName: Patch Rat
+  baseStats:
+    MaxHP: 14
+    MaxMP: 16
+    Strength: 2
+    Tech: 5
+    Defense: 2
+    Speed: 6
+    Move: 3
+    Jump: 1
+    Evasion: 10
+  statGrowthPerLevel:
+    MaxHP: 1
+    MaxMP: 1
+    Strength: 0
+    Tech: 1
+    Defense: 1
+    Speed: 0
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  abilityUnlocks:
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 9e1f426e267755242ad3a9bc55304123, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 5649a5da4ddd4675823971d62eaab732, type: 2}
+  tier: 0
+  prerequisites: []
+  allowedWeapons: 06000000i
+  isFixedKit: 1
+  defaultWeapon: {fileID: 11400000, guid: ec2ec2c057959a944a142451340647b1, type: 2}
+  model: {fileID: 100500, guid: 54c925df2b321cd47b92004382c85291, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

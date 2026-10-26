@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad3a5760a0d1c1a4d93dbf144ca419a0, type: 3}
+  m_Name: CyberSaint
+  m_EditorClassIdentifier: Assembly-CSharp::Tactica.Stats.JobDefinition
+  jobName: Cyber Saint
+  baseStats:
+    MaxHP: 24
+    MaxMP: 20
+    Strength: 6
+    Tech: 11
+    Defense: 6
+    Speed: 6
+    Move: 3
+    Jump: 1
+    Evasion: 5
+  statGrowthPerLevel:
+    MaxHP: 3
+    MaxMP: 2
+    Strength: 1
+    Tech: 2
+    Defense: 1
+    Speed: 1
+    Move: 0
+    Jump: 0
+    Evasion: 0
+  abilityUnlocks:
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 72d6683e605b24142863f06de1a51c68, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 5e0f128fcbea94f448a3113b51aed870, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: efb6b970071023b418f22088b0ed3f45, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 900bd9ae769712d408b52eaa6852e725, type: 2}
+  - RequiredLevel: 1
+    Ability: {fileID: 11400000, guid: 6de561e9117ef5e4a897565c96548ff4, type: 2}
+  tier: 2
+  prerequisites:
+  - job: {fileID: 11400000, guid: dd7c6bb3f99498d45abb020252ad6341, type: 2}
+    level: 4
+  - job: {fileID: 11400000, guid: fde56223d9c04ed44bc0b87ed47ecdfd, type: 2}
+    level: 3
+  allowedWeapons: 0600000001000000i
+  isFixedKit: 0
+  defaultWeapon: {fileID: 11400000, guid: ec2ec2c057959a944a142451340647b1, type: 2}
+  model: {fileID: 100046, guid: f671e87896ed58c4e972db58101c2d27, type: 3}
+  animatorController: {fileID: 9100000, guid: ee49ecfec165b504fadf956012b7cfa1, type: 2}

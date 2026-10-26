@@ -71,34 +71,88 @@ namespace Tactica.UI
             SetButtonLabel(moveButton, "Move  [2]");
             SetButtonLabel(waitButton, "Wait  [3]");
 
-            // The authored buttons are Unity's default white; match them to the menus.
-            StyleButton(attackButton);
-            StyleButton(moveButton);
-            StyleButton(waitButton);
+            // The authored panels and buttons are Unity's defaults; the code-built pieces above
+            // are plain boxes. One pass gives them all the menus' look.
+            NeonTheme.Skin(transform);
+            LayOutAuthoredPanels();
         }
 
-        private static void StyleButton(Button button)
+        private const float Margin = 16f;
+        private const float CommandWidth = 200f;
+        private const float CommandHeight = 40f;
+        private const float CommandSpacing = 8f;
+
+        // The prefab's panels were placed by hand flush against the screen edges. Bottom-left: the
+        // acting unit, then the target beside it. Bottom-right: Act / Move / Wait stacked, with
+        // the ability menu opening above them.
+        private void LayOutAuthoredPanels()
         {
-            if (button == null)
+            if (activeUnitPanel != null)
             {
-                return;
+                AnchorBottom((RectTransform)activeUnitPanel.transform, 0f, new Vector2(Margin, Margin));
+                activeUnitPanel.ApplyLayout();
             }
 
-            if (button.image != null)
+            if (targetUnitPanel != null)
             {
-                button.image.color = MenuBuilder.ButtonColor;
+                AnchorBottom((RectTransform)targetUnitPanel.transform, 0f, new Vector2(Margin * 2f + UnitInfoPanel.Width, Margin));
+                targetUnitPanel.ApplyLayout();
             }
 
-            ColorBlock colors = button.colors;
-            colors.disabledColor = new Color(0.55f, 0.55f, 0.55f, 0.6f);
-            button.colors = colors;
+            Button[] commands = { attackButton, moveButton, waitButton };
 
-            TMP_Text text = button.GetComponentInChildren<TMP_Text>();
-
-            if (text != null)
+            if (attackButton != null && attackButton.transform.parent is RectTransform menu)
             {
-                text.color = MenuBuilder.TextColor;
+                AnchorBottom(menu, 1f, new Vector2(-Margin, Margin));
+                menu.sizeDelta = new Vector2(CommandWidth, commands.Length * CommandHeight + (commands.Length - 1) * CommandSpacing);
+
+                // The prefab's own layout group stacks them; it only needs telling to fill the width.
+                if (menu.TryGetComponent(out VerticalLayoutGroup stack))
+                {
+                    stack.spacing = CommandSpacing;
+                    stack.padding = new RectOffset(0, 0, 0, 0);
+                    stack.childAlignment = TextAnchor.UpperCenter;
+                    stack.childControlWidth = true;
+                    stack.childControlHeight = true;
+                    stack.childForceExpandWidth = true;
+                    stack.childForceExpandHeight = false;
+                }
+
+                for (int i = 0; i < commands.Length; i++)
+                {
+                    if (commands[i] == null)
+                    {
+                        continue;
+                    }
+
+                    if (!commands[i].TryGetComponent(out LayoutElement element))
+                    {
+                        element = commands[i].gameObject.AddComponent<LayoutElement>();
+                    }
+
+                    element.preferredHeight = CommandHeight;
+                    element.minHeight = CommandHeight;
+
+                    TMP_Text label = commands[i].GetComponentInChildren<TMP_Text>();
+
+                    if (label != null)
+                    {
+                        label.fontSize = 22f;
+                    }
+                }
+
+                if (abilityMenu != null)
+                {
+                    abilityMenu.anchoredPosition = new Vector2(-Margin, Margin * 2f + menu.sizeDelta.y);
+                }
             }
+        }
+
+        // x: 0 for the left corner, 1 for the right.
+        private static void AnchorBottom(RectTransform rect, float x, Vector2 position)
+        {
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(x, 0f);
+            rect.anchoredPosition = position;
         }
 
         // The targeting preview follows the cursor, so it is polled rather than evented - the
@@ -427,7 +481,7 @@ namespace Tactica.UI
             abilityMenu.anchoredPosition = new Vector2(-16f, 140f);
             abilityMenu.sizeDelta = new Vector2(380f, 0f);
 
-            abilityMenu.gameObject.AddComponent<Image>().color = new Color(0.02f, 0.02f, 0.06f, 0.9f);
+            abilityMenu.gameObject.AddComponent<Image>();
             MenuBuilder.AddVerticalLayout(abilityMenu.gameObject, 4f, 8);
             abilityMenu.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
@@ -444,7 +498,6 @@ namespace Tactica.UI
             box.sizeDelta = new Vector2(640f, 44f);
 
             Image background = box.gameObject.AddComponent<Image>();
-            background.color = new Color(0.02f, 0.02f, 0.06f, 0.85f);
             background.raycastTarget = false;
 
             RectTransform labelRect = MenuBuilder.CreateRect(box, "Label");
@@ -453,7 +506,7 @@ namespace Tactica.UI
             previewLabel = labelRect.gameObject.AddComponent<TextMeshProUGUI>();
             previewLabel.fontSize = 22f;
             previewLabel.alignment = TextAlignmentOptions.Center;
-            previewLabel.color = new Color(0.3f, 0.95f, 0.95f);
+            previewLabel.color = NeonTheme.Cyan;
             previewLabel.raycastTarget = false;
 
             box.gameObject.SetActive(false);

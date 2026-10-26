@@ -30,17 +30,81 @@ namespace Tactica.UI
         [SerializeField] private TextMeshProUGUI hpLabel;
         [SerializeField] private TextMeshProUGUI mpLabel;
 
-        [Header("Faction Colours")]
-        // Same three colours as UnitStatusBar, deliberately duplicated as serialized fields rather
-        // than shared: these are per-panel art, and a HUD panel may well want a different tone from
-        // a bar floating over the board. Keep them in sync by eye.
-        [SerializeField] private Color allyColor = new Color(0.25f, 0.85f, 0.3f);
-        [SerializeField] private Color enemyColor = new Color(0.9f, 0.25f, 0.25f);
-        [SerializeField] private Color neutralColor = new Color(0.95f, 0.75f, 0.2f);
-
         private GridUnit boundUnit;
 
         public GridUnit BoundUnit => boundUnit;
+
+        public const float Width = 330f;
+        public const float Height = 100f;
+        private const float Pad = 16f;
+
+        // Places the panel's authored children on a regular grid - name and level on top, HP and
+        // MP bars below with their numbers right-aligned. The prefab was laid out by hand and its
+        // pieces did not line up; doing it here keeps one source for the layout. Anchoring the
+        // panel itself is the caller's job.
+        public void ApplyLayout()
+        {
+            RectTransform panel = (RectTransform)transform;
+            panel.sizeDelta = new Vector2(Width, Height);
+
+            Place(nameLabel, new Vector2(0f, 1f), new Vector2(Pad, -10f), new Vector2(Width - 110f, 32f));
+            Place(levelLabel, new Vector2(1f, 1f), new Vector2(-Pad, -14f), new Vector2(90f, 24f));
+            Place(hpLabel, new Vector2(1f, 1f), new Vector2(-Pad, -44f), new Vector2(90f, 22f));
+            Place(mpLabel, new Vector2(1f, 1f), new Vector2(-Pad, -70f), new Vector2(90f, 22f));
+            PlaceBar(hpFill, -50f, 12f);
+            PlaceBar(mpFill, -76f, 9f);
+
+            SetStyle(nameLabel, 26f, TextAlignmentOptions.Left, NeonTheme.TextRole.Display);
+            SetStyle(levelLabel, 18f, TextAlignmentOptions.Right, NeonTheme.TextRole.Data);
+            SetStyle(hpLabel, 18f, TextAlignmentOptions.Right, NeonTheme.TextRole.Data);
+            SetStyle(mpLabel, 16f, TextAlignmentOptions.Right, NeonTheme.TextRole.Data);
+
+            if (levelLabel != null)
+            {
+                levelLabel.color = NeonTheme.TextDim;
+            }
+
+            if (mpLabel != null)
+            {
+                mpLabel.color = NeonTheme.TextDim;
+            }
+        }
+
+        private static void Place(Component item, Vector2 corner, Vector2 position, Vector2 size)
+        {
+            if (item == null)
+            {
+                return;
+            }
+
+            RectTransform rect = (RectTransform)item.transform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = corner;
+            rect.anchoredPosition = position;
+            rect.sizeDelta = size;
+        }
+
+        // A bar is its fill's parent (the background), from the left padding to the numbers.
+        private static void PlaceBar(Image fill, float top, float height)
+        {
+            if (fill != null && fill.transform.parent is RectTransform)
+            {
+                Place(fill.transform.parent, new Vector2(0f, 1f), new Vector2(Pad, top), new Vector2(Width - Pad * 2f - 100f, height));
+            }
+        }
+
+        private static void SetStyle(TextMeshProUGUI label, float size, TextAlignmentOptions alignment, NeonTheme.TextRole role)
+        {
+            if (label == null)
+            {
+                return;
+            }
+
+            NeonTheme.Style(label, role);
+            label.fontSize = size;
+            label.alignment = alignment;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+        }
 
         // Binds a unit and draws it immediately. Passing null blanks the panel rather than leaving
         // the previous unit's numbers on screen, which would be actively misleading.
@@ -75,22 +139,18 @@ namespace Tactica.UI
 
             if (hpFill != null)
             {
-                hpFill.color = ColorFor(boundUnit.CurrentFaction);
+                hpFill.color = NeonTheme.FactionColor(boundUnit.CurrentFaction);
             }
-        }
 
-        // Mirrors UnitStatusBar.ColorFor - every member listed, so a future faction shows up as a
-        // missing case rather than silently painting itself ally-green.
-        private Color ColorFor(Faction faction)
-        {
-            switch (faction)
+            if (mpFill != null)
             {
-                case Faction.Player: return allyColor;
-                case Faction.Enemy: return enemyColor;
-                case Faction.Neutral: return neutralColor;
+                mpFill.color = NeonTheme.Mp;
             }
 
-            return neutralColor;
+            if (nameLabel != null)
+            {
+                nameLabel.color = NeonTheme.FactionColor(boundUnit.CurrentFaction);
+            }
         }
 
         private void ClearLabels()

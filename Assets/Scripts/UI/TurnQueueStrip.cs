@@ -18,18 +18,14 @@ namespace Tactica.UI
         private const int ForecastLength = 8;
         private const float RefreshInterval = 0.25f;
 
-        // Neon palette, matching the cyberpunk setting rather than the green/red of the HP bars.
-        private static readonly Color PlayerColor = new Color(0.3f, 0.95f, 0.95f);
-        private static readonly Color EnemyColor = new Color(1f, 0.3f, 0.55f);
-        private static readonly Color NeutralColor = new Color(1f, 0.8f, 0.3f);
-        private static readonly Color DownColor = new Color(0.55f, 0.55f, 0.6f);
+        private static readonly Color DownColor = NeonTheme.TextFaint;
 
         private CombatManager combat;
         private RectTransform panel;
         private readonly List<TextMeshProUGUI> rows = new List<TextMeshProUGUI>();
         private TextMeshProUGUI chargesLabel;
 
-        private static readonly Color ChargeColor = new Color(1f, 0.6f, 0.2f);
+        private static readonly Color ChargeColor = NeonTheme.Amber;
         private float nextRefresh;
 
         // The component sits on an always-active root and hides only its child panel. Hiding its
@@ -61,7 +57,7 @@ namespace Tactica.UI
             strip.combat = combat;
             strip.panel = rect;
 
-            MenuBuilder.AddText(rect, "TURN QUEUE", 18f, TextAlignmentOptions.Left, 26f, PlayerColor);
+            NeonTheme.Style(MenuBuilder.AddText(rect, "// TURN QUEUE", 18f, TextAlignmentOptions.Left, 26f, NeonTheme.Cyan), NeonTheme.TextRole.Display);
 
             for (int i = 0; i < ForecastLength; i++)
             {
@@ -130,21 +126,10 @@ namespace Tactica.UI
                 {
                     string guest = unit.IsGuest ? "  (guest)" : string.Empty;
                     row.text = $"{marker}{unit.DisplayName}{guest}";
-                    row.color = ColorFor(unit.CurrentFaction);
+                    row.color = NeonTheme.FactionColor(unit.CurrentFaction);
                 }
             }
         }
 
-        private static Color ColorFor(Faction faction)
-        {
-            switch (faction)
-            {
-                case Faction.Player: return PlayerColor;
-                case Faction.Enemy: return EnemyColor;
-                case Faction.Neutral: return NeutralColor;
-            }
-
-            return NeutralColor;
-        }
     }
 }

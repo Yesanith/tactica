@@ -27,24 +27,24 @@ namespace Tactica.UI
 
         [Header("Colours")]
         [Tooltip("HP fill colour for Player-faction units.")]
-        [SerializeField] private Color allyColor = new Color(0.25f, 0.85f, 0.3f);
+        [SerializeField] private Color allyColor = NeonTheme.Cyan;
 
         [Tooltip("HP fill colour for Enemy-faction units.")]
-        [SerializeField] private Color enemyColor = new Color(0.9f, 0.25f, 0.25f);
+        [SerializeField] private Color enemyColor = NeonTheme.Magenta;
 
         [Tooltip("HP fill colour for Neutral units. Amber reads as neither side at a glance, " +
                  "which is the point.")]
-        [SerializeField] private Color neutralColor = new Color(0.95f, 0.75f, 0.2f);
+        [SerializeField] private Color neutralColor = NeonTheme.Amber;
 
         [Tooltip("MP fill colour. Not faction-dependent.")]
-        [SerializeField] private Color mpColor = new Color(0.3f, 0.5f, 0.95f);
+        [SerializeField] private Color mpColor = NeonTheme.Mp;
 
         [Tooltip("Colour behind both fills.")]
-        [SerializeField] private Color backgroundColor = new Color(0.08f, 0.08f, 0.1f, 0.85f);
+        [SerializeField] private Color backgroundColor = new Color(0.01f, 0.02f, 0.04f, 0.85f);
 
         [Header("Turn Indicator")]
         [Tooltip("Fill of the triangle above the bars on whoever holds the turn.")]
-        [SerializeField] private Color turnIndicatorColor = new Color(0.2f, 0.9f, 0.85f);
+        [SerializeField] private Color turnIndicatorColor = NeonTheme.Cyan;
 
         [SerializeField] private Color turnIndicatorOutlineColor = Color.black;
 
@@ -372,7 +372,8 @@ namespace Tactica.UI
             statusLabel = labelObject.AddComponent<TMPro.TextMeshProUGUI>();
             statusLabel.fontSize = 9f;
             statusLabel.alignment = TMPro.TextAlignmentOptions.Center;
-            statusLabel.color = new Color(0.4f, 1f, 1f);
+            statusLabel.color = NeonTheme.Cyan;
+            NeonTheme.Style(statusLabel, NeonTheme.TextRole.Data);
             statusLabel.raycastTarget = false;
             statusLabel.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
             statusLabel.text = string.Empty;

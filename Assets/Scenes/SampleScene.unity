@@ -172,8 +172,8 @@ Camera:
   m_GameObject: {fileID: 330585543}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0.02, g: 0.03, b: 0.06, a: 1}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -386,51 +386,51 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4666038032863853986, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchorMax.y
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4666038032863853986, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchorMin.y
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 4666038032863853986, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 0
+      value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 4666038032863853986, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 0
+      value: -15
       objectReference: {fileID: 0}
     - target: {fileID: 7389043454201308159, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchorMax.y
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7389043454201308159, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchorMin.y
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 7389043454201308159, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 0
+      value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 7389043454201308159, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 0
+      value: -53
       objectReference: {fileID: 0}
     - target: {fileID: 8557359915959769139, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchorMax.y
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8557359915959769139, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchorMin.y
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8557359915959769139, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 0
+      value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 8557359915959769139, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_AnchoredPosition.y
-      value: 0
+      value: -91
       objectReference: {fileID: 0}
     - target: {fileID: 8931824199097426559, guid: b03e5f7667ac0dd4d8af574f0897d2d4, type: 3}
       propertyPath: m_Name
@@ -481,6 +481,7 @@ MonoBehaviour:
   highlightMaterial: {fileID: 2100000, guid: fb97108c8d055b548b4708b7c16296b5, type: 2}
   rangeMaterial: {fileID: 2100000, guid: f96ab5e5c21a0c84f8a9258b520a96c3, type: 2}
   attackableMaterial: {fileID: 2100000, guid: 845d42cc1a4086c47a5abcb3cfe58435, type: 2}
+  deployMaterial: {fileID: 0}
   maxStepHeight: 1
 --- !u!4 &348188159
 Transform:
@@ -511,7 +512,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Grid.GridCursorHighlighter
   grid: {fileID: 348188158}
   cam: {fileID: 330585545}
-  actionController: {fileID: 0}
   logHoveredCoords: 0
 --- !u!1 &410087039
 GameObject:
@@ -672,12 +672,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8fa10303bc8c1bf4ebf26f274012fe6b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Grid.GridUnit
+  displayName: 
   gridCoords: {x: 3, y: 3}
   currentJob: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
   level: 1
   gridManagerRef: {fileID: 348188158}
   faction: 0
-  statusBar: {fileID: 0}
+  isGuest: 0
+  facing: 0
   defenseBonus: 5
   pivotHeight: 1
   CurrentStats:
@@ -810,12 +812,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8fa10303bc8c1bf4ebf26f274012fe6b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Grid.GridUnit
+  displayName: 
   gridCoords: {x: 6, y: 6}
   currentJob: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
   level: 1
   gridManagerRef: {fileID: 348188158}
   faction: 1
-  statusBar: {fileID: 0}
+  isGuest: 0
+  facing: 0
   defenseBonus: 5
   pivotHeight: 1
   CurrentStats:
@@ -1328,6 +1332,7 @@ MonoBehaviour:
   - {fileID: 513276132}
   - {fileID: 633874829}
   testAbility: {fileID: 11400000, guid: a76f020b29ce16f4ca3567725fb009aa, type: 2}
+  gridManagerRef: {fileID: 0}
 --- !u!4 &1972310230
 Transform:
   m_ObjectHideFlags: 0
@@ -1357,6 +1362,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Tactica.Combat.PlayerActionController
   gridManagerRef: {fileID: 348188158}
   combatManagerRef: {fileID: 1972310229}
+  cursorRef: {fileID: 0}
 --- !u!114 &1972310232
 MonoBehaviour:
   m_ObjectHideFlags: 0

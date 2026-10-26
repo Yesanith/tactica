@@ -536,11 +536,68 @@ Gooner walking in; the board showed 2 authored + 2 generated contracts.
 pre-combat `CombatEnd` state) - `Tick()` now reports whether charges ended the fight, and
 `CombatClockTests` pin it (re-introducing the bug fails exactly those 3). AI units froze when every
 approach tile was under overwatch - they now walk in anyway.
-**Untested:** balance - a charged Piercing Beam hits for 22-24, likely too strong.
+**Untested:** balance - a charged Piercing Beam hits for 22-24, likely too strong (cut to Power 8 in
+the balance pass below).
+
+### Balance pass ✅ (2026-10-26)
+Measured, not guessed: a time-to-kill table per job and level, then **auto-battles** - the real
+MissionRunner, CombatManager and AI playing both sides (`Assets/Editor/Balance/`, Tactica > Balance
+in Play mode). Crews of every tier, levels 2-12, Mk I-III, hybrids, an all-hacker and an all-tank
+crew, against the contracts the generator hands them; 6 fights per setup.
+**What was wrong (first run):** the crew won every fight from level 5 up without anyone going down,
+even outnumbered. Four causes:
+- Enemy jobs grew +1 Strength a level against the crew's +2-3, and kept Mk I weapons forever.
+- Generated contracts sat at the district's danger (levels 1-5) however strong the crew got.
+- Defense was subtracted in full, so a Warden or Juggernaut took 1 damage from everything - immune.
+- Spire Gate's pool (Corp Trooper, Sec-Drone, Packet Thief) has one-attack kits; mid and top crews
+  outclass it at any level.
+
+**Changes:**
+- Damage floor: Defense soaks at most three quarters - `max(1, power - Defense, ceil(power / 4))`
+  (`ActionResolver.DamageAfterDefense`, also for counters and overwatch).
+- Enemy growth per level now like a start-tier job: +2 Strength (or Tech), +2-5 HP.
+- Opponents carry the weapon tier for their level: Mk I to 3, Mk II to 6, Mk III after
+  (`CampaignConfig.WeaponForLevel`).
+- Generated contracts and ambushes follow the crew: enemy level `max(danger, crew level + danger - 3)`
+  - Neon Row two below the crew, Rustyard even, Spire Gate one above. `CrewLevel` is the average of
+  the strongest crew that can deploy. Pay rises 10 cr per level above the danger.
+- **Elite enemies:** from enemy level 6, crew jobs with full kits join the squad (one, +1 every 3
+  levels, at most half) from a per-district `elitePool` - Neon Row: Blade, Deadeye, Cyber Knight;
+  Rustyard: Duelist, Breacher, Warden, Field Medic; Spire Gate: Sniper, Surgeon, Phantom, Warden.
+  No hackers: enemies taking over the crew is still deferred. Top jobs were tried in Spire Gate's
+  pool and made it too hard (mid crew 2 wins in 6).
+- Nerfs to the outliers the sims picked out: Sniper, Railgunner and Reaper +2 Strength a level
+  (was +3); Long Shot Power 0 (was 2; still 7 tiles); Piercing Beam 8 (12); Black ICE 4 (6);
+  Mind Spike 5 (7).
+- AI: a buff only counts on an ally with an enemy within 7 tiles (units spent the approach recasting
+  Aegis, Rally and Smoke Bomb); the last unit standing no longer retreats (two hurt survivors
+  backed away from each other until the 120-turn limit).
+
+**Result (AI playing the crew, 6 fights each, won / crew KOs):**
+
+| Crew | Neon Row | Rustyard | Spire Gate |
+|---|---|---|---|
+| Start jobs L2 Mk I | 6/6, 0 KOs | | |
+| Start jobs L5 Mk II | | 6/6, 4 KOs | 2/6, 15 KOs |
+| Mid jobs L8 Mk III | | 6/6, 0 KOs | 5/6, 8 KOs |
+| Hybrid mid L8 | | | 5/6, 7 KOs |
+| Hackers L10 | | | 4/6, 9 KOs |
+| Glass cannons L10 | | | 4/6, 14 KOs |
+| Top jobs L12 | | | 5/6, 3 KOs |
+| Tanks L10 (road) | | 6/6, 0 KOs | |
+
+The AI plays the crew worse than a player (no focus fire, buffs still eat turns), so a player should
+do better than these numbers. Fights last 13-40 turns.
+**Tested:** 102/102 EditMode tests (new: the damage floor, enemy levels following the crew, veterans
+joining, opponents' weapon tiers). The user's save was untouched.
+**Still open:** start jobs at level 5 lose most Spire Gate fights - fine if Spire Gate is meant for
+mid jobs, worth a look if not. Tank crews win safely but slowly. Credit pay against Mk III prices is
+unchecked.
 
 ### Next up
 Content and design gaps against GAME_DESIGN.md, roughly in order of payoff:
-- **Balance:** play through the new jobs; the kits and stats are paper numbers.
+- **Balance:** play it by hand; the auto-battles measure the AI's play, not a player's. Spire Gate
+  for start jobs, tank crews' pace, money against prices.
 - **Story:** the design's opening (Yuki kills the owner mid-raid), the unnamed ex-cop lead, Seraph,
   per-character quests.
 - **Decisions first:** unique weapons (where they drop), Mastery, save policy, persistent HP.

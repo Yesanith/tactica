@@ -563,8 +563,10 @@ hack") from the same formulas execution uses, so the preview cannot disagree wit
 - `GetHitChance` — damaging abilities only: `100 - Evasion`, with the target's Evasion **halved from
   the side and ignored from behind** (`GetAttackSide`), and doubled while it is defending (FFT's
   Defend). Other effects always land; Override has its own roll. A miss spends the action and MP.
-- `CalculateDamage` — `max(1, Power + user.Strength - target.Defense)`. The floor is not only
-  tuning: a negative result passed to `ApplyDamage` would *heal* the target. Returns 0 for
+- `CalculateDamage` — `DamageAfterDefense(power, Defense)` = `max(1, power - Defense, ceil(power /
+  MinDamageDivisor))`: Defense soaks at most three quarters. Counters and overwatch use the same
+  helper. The floor is not only tuning: a negative result passed to `ApplyDamage` would *heal* the
+  target, and without the quarter armoured units took 1 from everything. Returns 0 for
   non-damage abilities. `Magic` is unused — magic scales off `Strength`.
 - `TryExecuteAbility` — validates target → range → MP, **then** mutates. A rejected ability costs
   nothing. Damage and Heal are implemented; Buff/Debuff/StatusEffect log "not yet implemented",
@@ -721,10 +723,14 @@ after `StartCombat`, which catches damage, knockouts and faction changes from an
 with `UnitEntry.boss` get `GridUnit.SetBoss(true)` (Mass Override's half chance).
 
 **Generated contracts and the road.** `ContractGenerator` is pure and seeded (`StableHash`, FNV, so a
-seed is the same on every run): `Generate(district, escortJob, seed, Purpose)` picks a level and
-size from the district's danger, enemies from `DistrictDefinition.enemyPool`, and an objective
+seed is the same on every run): `Generate(district, escortJob, seed, Purpose, crewLevel)` picks a
+size from the district's danger, a level from `EnemyLevel(danger, crewLevel)` =
+`max(danger, crewLevel + danger - EvenDanger)`, enemies from `DistrictDefinition.enemyPool` - with
+`EliteCount` of them (from level `EliteFromLevel`) drawn from `elitePool` instead - and an objective
 (`DefeatAll` / `DefeatTarget` / `Protect` with an escort of `CampaignConfig.escortJob` / `Survive`
 for roads). `CampaignState.City` builds on it:
+- `CrewLevel`: the average level of the `MaxDeployed` strongest roster units, what generated fights
+  scale to.
 - `Listings` = authored listings + `CampaignConfig.generatedListings` generated ones, seeded by
   district and `BoardVersion` (bumped in `ApplyResult`, so the board changes after every mission).
 - `AmbushChanceFor(dest, out why)`: 0 on a safe road (`DistrictDefinition.safeRoads`), on a first
@@ -907,6 +913,15 @@ window, EditMode tab.
 - **Not covered:** anything needing frames or a live scene - `PlayerActionController`, the AI's
   turn coroutine, overwatch through `GridManager`, the menus. Those were verified by hand in
   the editor (see PROGRESS.md).
+
+**Balance auto-battles — `Assets/Editor/Balance/`.** `BalanceSim` plays whole fights with the real
+`MissionRunner`, `CombatManager` and AI in Play mode: it spawns the crew as roster units, hands them
+(and anything they hack) to the AI as guests, raises `Time.timeScale` and `runInBackground` (an
+unfocused editor otherwise stops the player loop), switches the campaign menu off so nothing reaches
+the save, and writes win rate, turns, knockouts and ability use to `Temp/BalanceSim.txt`. Guests do
+not count for the end condition, so a wiped crew is called a loss by the sim itself; fights past
+120 turns are called stalled with the survivors listed. `BalanceScenarios` holds the standard set
+(Tactica > Balance > Run standard auto-battles) with fixed seeds, so reruns meet the same fights.
 
 ## Known limitations and scaffolding
 

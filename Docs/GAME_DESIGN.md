@@ -74,7 +74,7 @@ Savaş, iki taraf arasında CT (charge time) ile sıralanan, ızgara tabanlı bi
 | Izgara | Seed'e bağlı üretilen harita (5 geçiş); hareket ve menzil Manhattan mesafesiyle, tırmanma Jump değeriyle sınırlı |
 | Sıra | Her birim Speed kadar CT biriktirir; 100'e ulaşan oynar. Tur bedeli yapılan eyleme göre 100, 80 veya 60; artan CT en fazla 60 devreder |
 | Yön ve kaçınma | Önden Evasion tam, yandan yarım, arkadan etkisiz; savunma duruşu (Wait) Evasion'ı ikiye katlar |
-| Hasar | `max(1, Power + Strength (ya da Tech) + silah Power − Defense)`; Tech'e ölçeklenen yetenekler (hack hasarı, şifa, Reboot) Strength yerine Tech kullanır |
+| Hasar | `max(1, Power + Strength (ya da Tech) + silah Power − Defense, Power'ın dörtte biri)` - Defense vuruşun en fazla dörtte üçünü emer; Tech'e ölçeklenen yetenekler (hack hasarı, şifa, Reboot) Strength yerine Tech kullanır |
 | Ölüm | Düşen birim bayılır; 3 tur içinde Reboot alamazsa kalıcı olarak elenir (flatline) |
 | Fraksiyon | Player, Enemy, Neutral; misafir birimler (guest) oyuncu tarafında ama AI kontrolündedir |
 
@@ -275,7 +275,7 @@ Başlangıç adımı olarak 3 mahalle, 1 kısa hikâye hattı ve görselsiz bir 
 
 **Bugün kodda (Mevcut, Faz 14):** üç mahalle, liste haritası: **Neon Row** (açılış, Velvet Room Raid → Yuki katılır, Rustyard açılır), **Rustyard** (Chrome Brute → Spire Gate açılır) ve **Spire Gate** (Cut the Signal, Data Heist). Yol savaşı şansı tehlike × %15 (en fazla %75); savaş öncesi brifing ekranı (deploy seçimi, düşman önizlemesi, ödül) ve hikâye metinleri var. Kayıt haritada elle, her savaştan sonra otomatik.
 **Şehir haritası kuralları (Mevcut):**
-- **Yol savaşları** varılan mahallenin tehlikesine göre ölçeklenir: düşman seviyesi ve sayısı tehlikeyle artar, düşmanlar mahallenin kendi havuzundan seçilir, hedef yenme / lideri düşürme / koruma / **"N tur dayan"** arasında değişir.
+- **Yol savaşları ve üretilen ilanlar** crew'un seviyesine ve mahallenin tehlikesine göre ölçeklenir: düşman seviyesi `max(tehlike, crew seviyesi + tehlike − 3)` (Neon Row crew'un iki altı, Rustyard eşit, Spire Gate bir üstü), sayı tehlikeyle artar, 6. seviyeden sonra mahallenin elit havuzundan tam kitli crew job'ları katılır, düşmanlar mahallenin kendi havuzundan seçilir, hedef yenme / lideri düşürme / koruma / **"N tur dayan"** arasında değişir.
 - **İlk ziyaret** asla pusuya düşmez; **güvenli yollar** (mahalle tanımında) da öyle.
 - **Savaş sonrası** bir yolculuk güvenlidir ("lying low").
 - **Temizlenmiş mahalle** (kontratları bitmiş): pusu şansı yarıya iner, shop fazladan stok açar; haritada CLEARED yazar.
@@ -360,9 +360,9 @@ Kadro üst sınırı 8, aynı anda göreve çıkan 4. Crew menüsü haritada her
 
 ## Zorluk ve denge notları
 
-Sayılar kâğıt üstünde hesaplandı; oyunda test edilmedi.
+İlk sayılar kâğıt üstünde hesaplandı. 2026-10-26 denge geçişi otomatik savaşlarla ölçüldü (sonuçlar PROGRESS.md'de): düşmanlar seviyeyle crew kadar büyür ve seviyelerine göre silah taşır, üretilen işler crew'un seviyesini izler, 6. seviyeden sonra düşman takımına tam kitli crew job'ları (elitler) katılır.
 
-- **Hasar ölçeği:** `max(1, Power + Strength − Defense)`. Örnek: Lv2 Cyber Knight (Str 10) Chrome Brute'a 9 vurur (4 vuruş); Brute ona `7 + 8 − 5 = 10` vurur (3 vuruş). Brute'un Speed'i 4 olduğu için oyuncu neredeyse iki tura karşı bir oynar.
+- **Hasar ölçeği:** `max(1, Power + Strength − Defense, Power / 4)` (denge geçişi, 2026-10-26: önceden zırhlı birimler her şeyden 1 alıp ölümsüzleşiyordu). Örnek: Lv2 Cyber Knight (Str 10) Chrome Brute'a 9 vurur (4 vuruş); Brute ona `7 + 8 − 5 = 10` vurur (3 vuruş). Brute'un Speed'i 4 olduğu için oyuncu neredeyse iki tura karşı bir oynar.
 - **Override şansı:** `Power + Tech` Tech 2 ile Tech 8 arasında neredeyse aynı şansı veriyor (kodda Power 35 ile %37 / %43). Öneri: `Power 9 + 3 × Tech` (Tech 8 → %33, Tech 2 → %15, Overmind Tech 14 → %51 + Root Access).
 - **Override ailesi** (Netrunner, Daemon, Overmind) üst düzeyde %60–70'e çıkabilir. Frenler: seviye farkı cezası, boss dirençleri, MP maliyeti 6–12, hack'lenen birimin ilk turda CT 0 ile başlaması.
 - **Evrensel ikincil riski:** herkes Medic/Surgeon aktiflerini ikincil alırsa o aile gereksizleşir. Frenler: MP birincilden gelir, pasifler gelmez, şifa Tech'e ölçeklenir, tek Destek slotu.

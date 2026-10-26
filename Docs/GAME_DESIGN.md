@@ -402,7 +402,9 @@ Yetenekler uygulama zorluğuna göre etiketlendi (T0 = mevcut kodla çalışır,
 
 ## Sanat ve ses yönü (öneri, karar yok)
 
-Bu alanda henüz bir karar verilmedi; arayüz bilerek çıplak. Birimler geçici olarak Unity'nin Adam Character Pack modellerini kullanıyor (Mevcut): Cyber Knight → Adam, Gooner → Guard, Kingpin → Lu, Chrome Brute → büyütülmüş Guard, Courier ve Civilian → Crowd; paket yoksa kapsül + yön vizörü. Bu paket yalnızca kişisel, ticari olmayan kullanıma izinli ve dağıtılamaz: oyun satılacaksa yerine başka modeller gerekir.
+**Arayüz (Mevcut, ilk geçiş, 2026-10-26): neon terminal.** Koyu lacivert paneller, köşeleri kesik çerçeveler, ince cyan kenarlar; düşman ve geri alınamaz işler magenta, uyarılar amber. Kelimeler Bahnschrift, sayılar Cascadia Mono (ikisi de Windows'tan çalışma anında; satış için lisanslı font gerekir). Menü arka planında silik bir ızgara, savaşta koyu kamera arka planı. Taraf renkleri her yerde aynı: oyuncu cyan, düşman magenta, tarafsız amber. Planlı: ikonlar, animasyonlu geçişler, başlıklarda parlama.
+
+Diğer sanat ve ses alanlarında henüz bir karar verilmedi. Birimler geçici olarak Unity'nin Adam Character Pack modellerini kullanıyor (Mevcut): Cyber Knight → Adam, Gooner → Guard, Kingpin → Lu, Chrome Brute → büyütülmüş Guard, Courier ve Civilian → Crowd; paket yoksa kapsül + yön vizörü. Bu paket yalnızca kişisel, ticari olmayan kullanıma izinli ve dağıtılamaz: oyun satılacaksa yerine başka modeller gerekir.
 
 - **Ton:** neon siberpunk şehir; çete mahalleleri ile corp bölgeleri görsel olarak ayrışsın (renk paleti, mimari).
 - **Birimler:** sınıf başına renk/siluet ile başlamak yeterli; model sonra. Fraksiyon ızgarada da görünüyor (Mevcut: ayak altında renkli halka; misafir yeşil, hack'lenen mor).

@@ -594,6 +594,23 @@ joining, opponents' weapon tiers). The user's save was untouched.
 mid jobs, worth a look if not. Tank crews win safely but slowly. Credit pay against Mk III prices is
 unchecked.
 
+### UI pass: neon terminal ✅ first pass (2026-10-26)
+One theme for every screen, chosen by the user from three directions: **neon terminal** - near-black
+navy panels with cut corners and thin cyan edges, magenta for hostile or irreversible, amber for
+warnings, a faint grid behind the menus, Bahnschrift for words and Cascadia Mono for numbers.
+`NeonTheme` holds the palette, code-drawn sprites and fonts; `MenuBuilder` uses it, so every menu
+changed at once; `NeonTheme.Skin` restyles the authored combat HUD, and `CombatHUD` lays its unit
+panels and Act/Move/Wait out properly (they were flush against the screen edges, bars overflowing).
+Faction colours are now one set everywhere (cyan / magenta / amber, MP violet) - the world bars and
+unit panels were green/red/blue. The camera clears to near-black instead of the default skybox.
+**Checked in the editor (screenshots):** main menu, district hub, travel, briefing, shop, unit
+screen (still fits one page), deployment, the fight HUD with the Act menu open and a target shown.
+**Tried and dropped:** a glow behind titles - TMP's underlay and glow need more SDF padding than the
+runtime font atlases have and drew boxes; titles are bold cyan instead.
+**Not done:** icons, transitions, the result and recruit screens were not looked at one by one (they
+use the same builders), and the fonts come from Windows at runtime - a release needs licensed
+font assets.
+
 ### Next up
 Content and design gaps against GAME_DESIGN.md, roughly in order of payoff:
 - **Balance:** play it by hand; the auto-battles measure the AI's play, not a player's. Spire Gate
@@ -601,7 +618,7 @@ Content and design gaps against GAME_DESIGN.md, roughly in order of payoff:
 - **Story:** the design's opening (Yuki kills the owner mid-raid), the unnamed ex-cop lead, Seraph,
   per-character quests.
 - **Decisions first:** unique weapons (where they drop), Mastery, save policy, persistent HP.
-- **Polish:** walk and hit clips, real audio, status icons, the real UI pass.
+- **Polish:** walk and hit clips, real audio, status icons, UI transitions and licensed fonts.
 
 ### Open questions
 Tracked in GAME_DESIGN.md's "Açık sorular". Settled so far: the Override formula (`Power 9 +

@@ -746,6 +746,30 @@ Player side — can be recruited afterwards.
 
 ## UI — `Assets/Scripts/UI/`
 
+### The look — `NeonTheme`
+
+Every screen's styling comes from one static class, so the look changes in one file. **Palette:**
+near-black navy panels, cyan edges and accents, magenta for hostile and irreversible, amber for
+warnings, a violet MP colour; `FactionColor(Faction)` (Player cyan, Enemy magenta, Neutral amber)
+is used by the world-space bars, the unit panels and the turn queue alike. **Sprites** are drawn in
+code: a cut-corner fill and a matching edge (signed distance, so antialiased; 9-sliced), a grid
+cell for the menu backdrop, a flat white for bars. **Fonts** load from the OS font folder at
+runtime - Bahnschrift for words (`TextRole.Display` / `Body`), Cascadia Mono (else Consolas) for
+numbers (`TextRole.Data`) - and fall back to TMP's default, so another OS only looks plainer. They
+are never imported: Bahnschrift may not be redistributed; a release needs licensed font assets.
+TMP glow and underlay were tried for titles and dropped: the runtime atlases' SDF padding is too
+small and the halo came out as boxes.
+
+- `SkinPanel` / `SkinButton` / `SetButtonKind` / `SkinBackdrop` style code-built pieces. A button's
+  fill lives in its `ColorBlock` (the Image is white), so hover and press tint every kind alike.
+  Edges and the grid are children named `Edge` / `Grid` with `ignoreLayout`, which
+  `MenuBuilder.Clear` leaves alone.
+- `Skin(root)` restyles an authored hierarchy - the combat HUD prefab: buttons, panels, labels, and
+  filled bars (flat sprite, colour kept). `CombatHUD.LayOutAuthoredPanels` then places the prefab's
+  unit panels (`UnitInfoPanel.ApplyLayout`) and the Act/Move/Wait stack with 16 px margins, since
+  the prefab's hand placement did not line up.
+- The scene camera clears to a solid near-black (it showed the default skybox).
+
 ### Prototype menus — `MenuBuilder` and `CampaignMenu`
 
 `CampaignMenu` is one partial class over six files: `CampaignMenu.cs` (boot, screen frame, main
@@ -825,11 +849,9 @@ is displayed without tracking it. Shows `GridUnit.DisplayName` (the unit's own n
 name, else the GameObject name), `Lv.{n}`, and `{current}/{max}` labels beside filled `Image` bars. HP carries
 faction colour. Null binding blanks the panel rather than throwing or leaving stale numbers.
 
-Both `UnitInfoPanel` and `UnitStatusBar` map faction to HP-fill colour through a `ColorFor(Faction)`
-switch — Player green, Enemy red, Neutral amber. Every member is listed rather than relying on a
-`default` arm, so a future faction surfaces as a missing case instead of silently painting itself
-ally-green. The two sets of colours are separate serialized fields on purpose: a HUD panel may want
-a different tone from a bar floating over the board.
+`UnitInfoPanel` colours its HP bar and name with `NeonTheme.FactionColor`; `UnitStatusBar` keeps its
+own serialized colours (defaulting to the theme's) and its `ColorFor(Faction)` switch. Every member
+is listed rather than relying on a `default` arm, so a future faction surfaces as a missing case.
 
 The **target panel** is driven by `PlayerActionController.OnTargetSelected`, subscribed in
 `OnEnable` / unsubscribed in `OnDisable` alongside the combat events. It is announced *before* the

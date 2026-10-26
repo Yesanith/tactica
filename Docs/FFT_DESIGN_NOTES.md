@@ -339,6 +339,9 @@ için riske gireyim mi?" kararı verir. Kalıcı kayıp, roster'a duygusal ağı
 
 ## 15. Tactica için öncelikli yol haritası
 
+> Bu tablo FFT araştırmasından çıkan ilk öneri listesiydi. Projenin güncel yol haritası artık
+> [PROGRESS.md](PROGRESS.md)'de (Faz 8–15), tasarımın kendisi [GAME_DESIGN.md](GAME_DESIGN.md)'de.
+
 > **Durum (2026-10-24):** 1, 2, 3, 4 ve 8 uygulandı, cyberpunk temasına uyarlanarak:
 > CT saati + **Turn Queue**, tur başına tek aksiyon (**Act** menüsü), hasar/şans önizlemesi,
 > **Flatline** sayacı (ölüm sayacı; süre biterse kalıcı kayıp) + **Reboot Protocol** (Raise),

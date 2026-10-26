@@ -22,6 +22,7 @@ blanks).
 | Namespaces | `Tactica.Grid`, `Tactica.Camera`, `Tactica.Stats`, `Tactica.Combat`, `Tactica.Campaign`, `Tactica.UI` — each maps 1:1 to a folder under `Assets/Scripts/` |
 | Naming | `camelCase` private fields (serialized and not); `PascalCase` public members, properties, methods, consts, and `static readonly` |
 | Field renames | Any rename of a `[SerializeField]` field carries `[FormerlySerializedAs("OldName")]`, because Unity serializes by field name and a bare rename silently discards Inspector values |
+| Large classes | Split into `partial` files by concern, named `Class.Concern.cs`: `CampaignState` (`.Jobs`, `.Equipment`, `.City`, `.Save`), `GridUnit` (`.Loadout`, `.Status`), `CampaignMenu` (`.Map`, `.Unit`, `.Deploy`, `.Combat`, `.Text`), `GridManager.Highlight`, `CombatManager.Charges`, `ActionResolver.Preview`, `EnemyAIController.Positioning`, `MissionRunner` (`.Deployment`, `.Objectives`, `.Spawning`). Fields stay in the main file |
 | Comments | Terse. They record *why*, not *what* — non-obvious invariants, platform gotchas, and decisions that look wrong but aren't |
 
 ### Namespace dependencies
@@ -164,18 +165,22 @@ edit mode, which would leak a duplicate tile set on every context-menu render.
 ### Hover and highlighting
 
 **`TileHighlightState`** is a `[Flags]` enum: `InMoveRange = 1<<0`, `Hovered = 1<<1`,
-`Attackable = 1<<2`. Flags, not a plain enum, because several layers apply to one tile at once and
-each system must set and clear only its own bit.
+`Attackable = 1<<2`, `Deployable = 1<<3`, `Charging = 1<<4`. Flags, not a plain enum, because several layers apply to
+one tile at once and each system must set and clear only its own bit.
 
 `ApplyHighlightVisual(coords)` is the **single** place that decides a tile's material, with fixed
 precedence:
 
 ```
-Hovered  >  Attackable  >  InMoveRange  >  base
+Hovered  >  Attackable  >  Charging  >  Deployable  >  InMoveRange  >  base
 ```
 
 Precedence lives there rather than in whoever wrote last, so the order the systems run in does not
-matter. Four materials: `baseMaterial`, `highlightMaterial`, `rangeMaterial`, `attackableMaterial`.
+matter. Five materials: `baseMaterial`, `highlightMaterial`, `rangeMaterial`, `attackableMaterial`
+and `deployMaterial` - the last optional: left empty, a teal copy of `rangeMaterial` is made at
+runtime, so the deployment zone (`ShowDeployZone` / `ClearDeployZone`) never reads as a move range.
+Pending charges use a runtime orange material (`AddChargeTiles` / `RemoveChargeTiles`), ref-counted
+per tile so two charges over one tile do not clear each other.
 
 The move range appears **only** on an explicit Move press (`PlayerActionController.BeginMove`).
 `PlayerActionController.HandleActiveUnitChanged` clears the outgoing unit's range and draws nothing;
@@ -340,8 +345,11 @@ transform is written. Mutating the transform per-control would make the three fi
 - **Pan** (WASD/arrows) — basis built from `yaw` alone, not `transform.forward`, so pitch never
   leaks into movement and there is no degenerate case looking straight down.
   `ClampMagnitude` prevents diagonals moving √2 faster.
-- **Zoom** (scroll) — changes `distance` from the pivot, clamped, so it reads as "closer to what I
-  am looking at" and cannot overshoot past the pivot.
+- **Zoom** (scroll) — changes `distance` from the pivot by `zoomSpeed` per wheel notch, clamped,
+  so it reads as "closer to what I am looking at" and cannot overshoot past the pivot.
+  `CameraInput.GetScrollNotches` reads the Input System's `scrollDeltaBehavior`: the default
+  `UniformAcrossAllPlatforms` already reports ~1 per notch, the platform-specific mode 120 on
+  Windows. Dividing by 120 regardless made zoom 120× too slow.
 - **Rotate** (Q/E) — 90° snaps over `snapRotationDuration`, `SmoothStep`-eased. Input is read only
   when idle, which is what discards mid-snap presses. Lands on the target exactly rather than
   easing asymptotically, so repeated snaps accumulate no drift. **No `Time.deltaTime`** on rotation
@@ -448,6 +456,21 @@ The reset happens here rather than in a listener because it is an invariant of t
 must apply to AI-driven turns too, and must not depend on any particular listener existing.
 
 Speed is read **live** every tick, so haste/slow will take effect immediately once they exist.
+
+**Charged abilities.** An ability with `chargeTime > 0` spends its MP in `TryExecuteAt`, then
+`ActionResolver.OnChargeStarted` hands it to `CombatManager`, which keeps a `PendingCharge` (user,
+centre, ability, ticks left) in `PendingCharges`. `Tick()` ends with `TickCharges()`: due charges
+go off through `ActionResolver.ResolveCharge` (the same `Resolve` path as an instant ability, on
+whoever stands in the area then) or fizzle if the user is knocked out. `Tick()` returns whether a
+charge **ended the fight**, and `AdvanceToNextTurn` stops only on that - not on `CurrentState`,
+which is still `CombatEnd` before the first turn (that check once ended every fight at once;
+`CombatClockTests` pin it). Charges are cleared in `StartCombat`, `AbortCombat` and `EndCombat`.
+
+**Overwatch.** `StatusKind.Overwatch` on a unit. `GridManager.UnitMoved` (raised at the end of
+`TryMoveUnitToTile`) reaches `CombatManager.HandleUnitMoved`, which calls
+`ActionResolver.ResolveOverwatch(watchers, mover)`: the first hostile watcher with the mover in
+weapon range fires one weapon shot (`PhysicalHitChance`, so evasion applies) and loses the status.
+`PlayerActionController.TryMove` ends the turn if the mover was knocked out; the AI checks the same.
 
 ### State — `CombatState`
 
@@ -634,11 +657,31 @@ Everything between fights. Plain data plus one MonoBehaviour that touches the sc
 | `CampaignConfig` | ScriptableObject at **`Assets/Resources/CampaignConfig.asset`** (loaded by path, see `ResourcePath`): starting roster, recruitable jobs, recruit names, roster/deploy caps, mission list, and `startWithMenu` |
 | `MissionDefinition`, `UnitEntry` | A mission is a name, a description and a list of opponents (job, level, faction). No map data — spawn tiles are chosen at runtime |
 | `RosterUnit` | Name, job, level, deployed flag. **No HP** — pools refill at every spawn |
-| `CampaignState` | Plain C# like `ActionResolver`: roster and recruit-pool rules, mission results, JSON save in `persistentDataPath/campaign.json` |
+| `CampaignState` | Plain C# like `ActionResolver`, split into partial files by concern: `CampaignState.cs` (roster, hiring, mission results), `.Jobs.cs` (jobs, learning, passive slots), `.Equipment.cs` (weapons, inventory, shop), `.City.cs` (districts, story, travel), `.Save.cs` (JSON save in `persistentDataPath/campaign.json`, migration) |
 | `MissionRunner` | Spawns the deployed roster and the opponents as `GridUnit`s, starts combat, and turns `OnCombatEnded` / a retreat into a `MissionResult` |
 
-**Spawning.** Each unit is a primitive Capsule built **inactive**, given `GridUnit.Configure(...)`, then
+**Deployment.** `MissionRunner.StartMission` builds the board, spawns both sides and stops in
+`IsDeploying`: the crew may be moved (`TryPlace`) only within `DeploymentZone`, a compact patch of
+`max(MinDeployZone, crew × DeployZonePerUnit)` tiles nearest the first crew spawn. `BeginBattle`
+snapshots starting factions, subscribes progress tracking and calls `CombatManager.StartCombat`;
+`CancelDeployment` clears the board without producing a `MissionResult`. `Retreat` is ignored
+while deploying. `PlayerActionController` ignores board clicks until combat is running.
+
+**Spawning.** Each unit's body is built **inactive**, given `GridUnit.Configure(...)`, then
 activated — so `GridUnit.Awake` computes stats from the configured job on its one and only run.
+
+**Bodies.** The model is `UnitEntry.modelOverride` if set, else `JobDefinition.Model`. With a model,
+the unit is an empty root with the model as a child (scaled by `UnitEntry.modelScale`, root motion
+off, the job's `AnimatorController` assigned) and `SetPivotHeight(0)`, since model pivots are at the
+feet. Without one it is the placeholder Capsule with its facing visor and `SetPivotHeight(1)`. The
+root is what `GridUnit` moves and turns, so the model's own transform is never overwritten.
+
+Models come from Unity's **Adam Character Pack** (Cyber Knight → Adam, Gooner → Guard; Kingpin → Lu
+×1.1, Chrome Brute → Guard ×1.3, Courier and Civilian → Crowd). All are humanoid, so one idle clip
+(Guard's controller) retargets onto every model; Adam's and Lu's own controllers only walk in place.
+**The pack is git-ignored** (Asset Store restricted licence: personal, non-commercial, no
+redistribution; ~1 GB). In a clone without it the references resolve to null and every unit falls
+back to the capsule.
 Tiles: Player fills rows from the near edge, Enemy from the far edge, Neutral from the middle, each
 row centre-out. Occupancy is claimed at spawn rather than in `GridUnit.Start` (next frame), so later
 spawns in the same loop see the tile as taken. The scene's hand-placed units are **removed** on the
@@ -666,6 +709,7 @@ applies to every mission; an objective can only end a fight **earlier**:
 | `DefeatAll` | (nothing extra) | — |
 | `DefeatTarget` | the named unit is knocked out **or no longer Enemy** (hacked) | Victory |
 | `Protect` | the named unit is knocked out | Defeat |
+| `Survive` | the crew has had `surviveTurns` turns (counted on `OnActiveUnitChanged`) | Victory |
 
 `MissionRunner` finds the unit by `objectiveUnitName` and subscribes to **its** `StatsChanged`
 after `StartCombat`, which catches damage, knockouts and faction changes from any source. It calls
@@ -673,11 +717,55 @@ after `StartCombat`, which catches damage, knockouts and faction changes from an
 `TryEndCombatNow` also uses. This can fire mid-resolution (a knockout raises `StatsChanged` inside
 `ApplyDamage`); the controllers' own `TryEndCombatNow` afterwards simply sees combat already over.
 
+`MissionRunner.ObjectiveStatus` gives the HUD the live text ("Hold out: 2/3 turns"). Opponents
+with `UnitEntry.boss` get `GridUnit.SetBoss(true)` (Mass Override's half chance).
+
+**Generated contracts and the road.** `ContractGenerator` is pure and seeded (`StableHash`, FNV, so a
+seed is the same on every run): `Generate(district, escortJob, seed, Purpose)` picks a level and
+size from the district's danger, enemies from `DistrictDefinition.enemyPool`, and an objective
+(`DefeatAll` / `DefeatTarget` / `Protect` with an escort of `CampaignConfig.escortJob` / `Survive`
+for roads). `CampaignState.City` builds on it:
+- `Listings` = authored listings + `CampaignConfig.generatedListings` generated ones, seeded by
+  district and `BoardVersion` (bumped in `ApplyResult`, so the board changes after every mission).
+- `AmbushChanceFor(dest, out why)`: 0 on a safe road (`DistrictDefinition.safeRoads`), on a first
+  visit (`visitedDistricts`) and while `SafeTrips` > 0 (set after a fight); halved
+  (`ClearedAmbushFactor`) into a cleared district (`IsCleared`: all its contracts done).
+- `ShopStock` adds `DistrictDefinition.clearedStock` once the district is cleared.
+Save format **version 4** adds `visitedDistricts`, `boardVersion`, `safeTrips`; an older save marks
+the current district visited.
+
 An opponent entry with faction **Player** and `guest: 1` is a **guest** (the Courier, the Civilian):
 it fights on the crew's side under **AI control**, is not in the roster, and — having ended on the
 Player side — can be recruited afterwards.
 
 ## UI — `Assets/Scripts/UI/`
+
+### Prototype menus — `MenuBuilder` and `CampaignMenu`
+
+`CampaignMenu` is one partial class over six files: `CampaignMenu.cs` (boot, screen frame, main
+menu, crew, hiring, results), `.Map.cs` (hub, job board, briefing, travel, shop), `.Unit.cs` (crew
+member screen), `.Deploy.cs` (placing the crew before the first turn), `.Combat.cs` (starting a
+fight, the in-fight overlay, the result hand-back) and `.Text.cs` (shared descriptions). Rich-text colours come from `MenuBuilder`'s `*Hex` strings,
+derived from the `Color` constants so labels and tinted text cannot drift apart.
+
+`MenuBuilder` builds every menu primitive in code. Screens go through `CampaignMenu.BeginScreen`
+(title, status strip, where Back/Escape goes) and `EndScreen` (notice, Back, then
+`MenuBuilder.SettleScroll`, so a new screen is laid out before it is drawn). The column sits in a
+`ScrollRect` whose `CenterWhenShort` helper centres short screens and clamps tall ones. Colour is
+semantic only (`SelectedColor`, `PrimaryColor`, `DangerColor`); a coloured button keeps its colour
+when disabled. Irreversible actions use `AddConfirmButton`: the first click arms it for the next
+redraw, and any other navigation disarms it.
+
+### Board feedback — `UnitFeedback`
+
+Self-attaches through `GridUnit.Spawned` like the bars, and is purely cosmetic: a faction ring
+(`LineRenderer`, a separate object so the KO fall does not tip it), floating callouts
+(`FloatingText`: damage, heals, KO, REBOOT, new statuses, HACKED, and MISS/RESISTED from
+`ActionResolver.OnActionResolved`), a hop tween between tiles, a shake on damage and a sideways
+fall about the feet when knocked out. The tween never delays rules: `GridUnit` moves the transform
+at once and `LateUpdate` notices the jump and eases from where it last drew the unit. Sounds come
+from `FeedbackAudio`, which synthesises six short clips at first use - stand-ins until real audio.
+`FloatingText` and `FeedbackAudio` live in their own files.
 
 ### World-space bars — `UnitStatusBar`
 
@@ -704,7 +792,9 @@ This component sits on the **unit**, so `transform` is the unit's; the billboard
 `barRoot` instead. Runs in `LateUpdate` because the camera moves in `Update`. Positioning happens
 **before** the camera lookup, so a missing camera cannot also break placement.
 
-Data-driven: `offset`, `allyColor`, `enemyColor`, `mpColor`, `backgroundColor`.
+Data-driven: `offset`, `allyColor`, `enemyColor`, `mpColor`, `backgroundColor`. `offset.y` is
+**raised in Awake** to clear the tallest renderer under the unit plus 0.35, never lowered — so bars
+sit just over a model's head (a scaled-up boss included) and the capsule keeps its old placement.
 Code-driven: everything structural.
 
 ### Act menu, targeting preview, turn queue — built by `CombatHUD`
@@ -799,6 +889,25 @@ board clicks while a menu is up; `GridInput.IsPointerOverUI` sees it because the
 with a button cycling Player → Enemy → Neutral, followed by `TryEndCombatNow`, since no attack
 happened to check it) and **Retreat**. Creates an `EventSystem` if the scene has none.
 
+## Tests — `Assets/Editor/Tests/`
+
+EditMode NUnit tests in the predefined editor assembly (there are no asmdefs, so the game code is
+`Assembly-CSharp` and the tests sit in an `Editor` folder to see it). Run them from the Test Runner
+window, EditMode tab.
+
+- **Data:** `TestData` loads the real `Assets/Resources/CampaignConfig.asset` and finds jobs,
+  abilities and weapons through it (the basic Attack lives on the config, not in a job list).
+  Expected values are computed from asset numbers, so tests pin rules rather than balance.
+- **Units:** `UnitFactory` builds a `GridUnit` without a scene: `Configure`, then the first
+  `RecalculateStats` - what `Awake` would do, since `Awake` does not run in EditMode.
+- **No disk:** save tests use `CampaignState.ToJson` / `FromJson`; nothing touches the player's
+  `campaign.json`.
+- **CT clock:** `CombatClockTests` build a `CombatManager` on an inactive GameObject (so `Awake`
+  does not grab the open scene's board) and wire the resolver by hand.
+- **Not covered:** anything needing frames or a live scene - `PlayerActionController`, the AI's
+  turn coroutine, overwatch through `GridManager`, the menus. Those were verified by hand in
+  the editor (see PROGRESS.md).
+
 ## Known limitations and scaffolding
 
 Current facts about the code, not planned work.
@@ -807,13 +916,10 @@ Current facts about the code, not planned work.
 
 | What | Where | Note |
 |---|---|---|
-| First unlocked ability (AI only) | `EnemyAIController.SelectAbility` | The AI never uses Override or Reboot. |
-| +1 level per won mission | `CampaignState.ApplyResult` | Stands in for XP. Deployed survivors only. |
-| `Lv -` / `Lv +` buttons | `CampaignMenu.ShowRoster` | Debug controls for testing stat growth. |
-| Capsule units | `MissionRunner.Spawn` | No per-job model or colour; faction shows only on the bars. |
+| Adam Character Pack models | `JobDefinition.Model`, `UnitEntry.modelOverride` | Non-commercial licence, git-ignored; idle clip only - moves hop (`UnitFeedback`) instead of walking. Capsules where the pack is missing. |
 | Flat per-level growth | `JobDefinition` | Not a curve asset. |
-| `Magic` unused | `ActionResolver.CalculateDamage` | All damage scales off `Strength`. |
-| Buff/Debuff/StatusEffect | `ActionResolver.TryExecuteAbility` | Log only — but MP is spent and it returns `true`. |
+| Synthesised sounds | `FeedbackAudio` | Six generated blips until a real audio pass. |
+| Debug faction panel | `CampaignMenu.Combat.cs` | "Debug: Factions" in the fight overlay - test bench for faction changes and end conditions. Hidden unless `CampaignConfig.showDebugTools` is on. |
 
 ### Scaffolding pending removal
 

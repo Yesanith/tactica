@@ -22,6 +22,25 @@ namespace Tactica.Campaign
 
         // Lose the moment the named unit goes down - FFT's guest escort.
         Protect = 2,
+
+        // Win once the crew has taken surviveTurns turns - an ambush to hold out against. Clearing
+        // the enemy still wins early, as always.
+        Survive = 3,
+    }
+
+    // Where a mission comes from, which decides its rewards and whether it repeats.
+    // Values PINNED.
+    public enum MissionKind
+    {
+        // A job-board contract: repeatable, pays credits.
+        Listing = 0,
+
+        // A step of the story: plays once, may unlock a district or bring someone into the crew.
+        Story = 1,
+
+        // Not authored as such - a listing used as a template when the road is cut on the way to a
+        // district. Set at runtime; pays half.
+        Road = 2,
     }
 
     // One selectable encounter. Opponents only - the player side is whoever is deployed from the
@@ -40,6 +59,34 @@ namespace Tactica.Campaign
 
         public MissionObjective objective = MissionObjective.DefeatAll;
 
+        [Header("Campaign")]
+        public MissionKind kind = MissionKind.Listing;
+
+        [Tooltip("Paid on victory. Road encounters pay half.")]
+        [Min(0)]
+        public int credits = 100;
+
+        [Tooltip("Weapons added to the inventory on victory.")]
+        public List<Tactica.Stats.EquipmentDefinition> loot = new List<Tactica.Stats.EquipmentDefinition>();
+
+        [Tooltip("Shown on the briefing screen before the fight.")]
+        [TextArea(2, 6)]
+        public string introText;
+
+        [Tooltip("Shown on the result screen after a victory.")]
+        [TextArea(2, 6)]
+        public string outroText;
+
+        [Tooltip("District opened by winning this (story) mission.")]
+        public string unlocksDistrict;
+
+        [Tooltip("Guests (by unitName) who join the crew for good when this mission is won.")]
+        public List<string> joinsCrew = new List<string>();
+
+        [Tooltip("Survive: turns the crew has to hold out for.")]
+        [Min(1)]
+        public int surviveTurns = 6;
+
         [Tooltip("The unit DefeatTarget and Protect are about, matched against an opponent's unitName.")]
         public string objectiveUnitName;
 
@@ -52,6 +99,7 @@ namespace Tactica.Campaign
             {
                 case MissionObjective.DefeatTarget: return $"Neutralize {objectiveUnitName}";
                 case MissionObjective.Protect: return $"Keep {objectiveUnitName} alive";
+                case MissionObjective.Survive: return $"Hold out for {surviveTurns} turns";
                 default: return "Defeat all enemies";
             }
         }

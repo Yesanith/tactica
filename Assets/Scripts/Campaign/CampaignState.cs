@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using UnityEngine;
 using Tactica.Grid;
@@ -14,27 +13,33 @@ namespace Tactica.Campaign
     // recruited after a mission) are testable without a scene. The menu calls in; nothing here
     // knows a menu exists.
     //
-    // Persisted as JSON in persistentDataPath. Jobs are saved by asset name and resolved through
-    // CampaignConfig on load, since a ScriptableObject reference does not survive JsonUtility.
-    public class CampaignState
+    // Split by concern into partial files:
+    //   CampaignState.cs            roster, hiring, applying a mission's result
+    //   CampaignState.Jobs.cs       jobs, learning, passive slots
+    //   CampaignState.Equipment.cs  weapons, inventory, shop
+    //   CampaignState.City.cs       districts, story progress, travel
+    //   CampaignState.Save.cs       JSON save/load and migration
+    public partial class CampaignState
     {
-        private const string SaveFileName = "campaign.json";
-
         private readonly CampaignConfig config;
         private readonly List<RosterUnit> roster = new List<RosterUnit>();
         private readonly List<RosterUnit> recruitPool = new List<RosterUnit>();
+
+        // Weapons owned but not in anyone's hands.
+        private readonly List<EquipmentDefinition> inventory = new List<EquipmentDefinition>();
+
+        public IReadOnlyList<EquipmentDefinition> Inventory => inventory;
 
         public IReadOnlyList<RosterUnit> Roster => roster;
         public IReadOnlyList<RosterUnit> RecruitPool => recruitPool;
         public int MissionsWon { get; private set; }
 
+        public int Credits { get; private set; }
+
         public int MaxRosterSize => config.MaxRosterSize;
         public int MaxDeployed => config.MaxDeployed;
         public int DeployedCount => roster.Count(unit => unit.Deployed);
         public bool HasRosterSpace => roster.Count < config.MaxRosterSize;
-
-        public static string SavePath => Path.Combine(Application.persistentDataPath, SaveFileName);
-        public static bool HasSave => File.Exists(SavePath);
 
         private CampaignState(CampaignConfig config)
         {
@@ -52,65 +57,15 @@ namespace Tactica.Campaign
                     continue;
                 }
 
-                RosterUnit unit = new RosterUnit(NameOrJob(entry.unitName, entry.job), entry.job, entry.level);
+                RosterUnit unit = RosterUnit.CreateFresh(NameOrJob(entry.unitName, entry.job), entry.job, entry.level);
                 unit.Deployed = state.DeployedCount < config.MaxDeployed;
                 state.roster.Add(unit);
             }
 
+            state.inventory.AddRange(config.StartingInventory.Where(item => item != null));
+            state.StartCity();
             state.RefreshRecruitPool();
             return state;
-        }
-
-        // Null if there is no save or it cannot be read. A corrupt save is logged and treated as
-        // absent rather than thrown, so the main menu still works.
-        public static CampaignState Load(CampaignConfig config)
-        {
-            if (!HasSave)
-            {
-                return null;
-            }
-
-            SaveData data;
-
-            try
-            {
-                data = JsonUtility.FromJson<SaveData>(File.ReadAllText(SavePath));
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning($"{nameof(CampaignState)}: could not read {SavePath}: {exception.Message}");
-                return null;
-            }
-
-            if (data == null)
-            {
-                return null;
-            }
-
-            CampaignState state = new CampaignState(config);
-            state.MissionsWon = data.missionsWon;
-            state.RestoreUnits(data.roster, state.roster);
-            state.RestoreUnits(data.recruitPool, state.recruitPool);
-            return state;
-        }
-
-        public void Save()
-        {
-            SaveData data = new SaveData
-            {
-                missionsWon = MissionsWon,
-                roster = roster.Select(ToSaved).ToList(),
-                recruitPool = recruitPool.Select(ToSaved).ToList(),
-            };
-
-            try
-            {
-                File.WriteAllText(SavePath, JsonUtility.ToJson(data, true));
-            }
-            catch (Exception exception)
-            {
-                Debug.LogWarning($"{nameof(CampaignState)}: could not write {SavePath}: {exception.Message}");
-            }
         }
 
         public List<RosterUnit> GetDeployed()
@@ -122,13 +77,21 @@ namespace Tactica.Campaign
         // never silently changes who goes on the next mission.
         public bool Recruit(RosterUnit candidate)
         {
-            if (!HasRosterSpace || !recruitPool.Remove(candidate))
+            int cost = HireCost(candidate);
+
+            if (!HasRosterSpace || Credits < cost || !recruitPool.Remove(candidate))
             {
                 return false;
             }
 
+            Credits -= cost;
             roster.Add(candidate);
             return true;
+        }
+
+        public int HireCost(RosterUnit candidate)
+        {
+            return candidate.Level * config.HireCostPerLevel;
         }
 
         // Adds a unit met in a mission. Separate from Recruit because it does not come from the
@@ -140,7 +103,14 @@ namespace Tactica.Campaign
                 return null;
             }
 
-            RosterUnit unit = new RosterUnit(UniqueName(NameOrJob(report.Name, report.Job)), report.Job, report.Level);
+            string name = UniqueName(NameOrJob(report.Name, report.Job));
+
+            // Hacked units and fixed-kit jobs keep their job and never earn JP - GAME_DESIGN.md's
+            // rule for hacked recruits. A rescued guest joins as an ordinary crew member.
+            RosterUnit unit = report.Hacked || report.Job.IsFixedKit
+                ? new RosterUnit(name, report.Job, report.Level) { Locked = true }
+                : RosterUnit.CreateFresh(name, report.Job, report.Level);
+
             roster.Add(unit);
             return unit;
         }
@@ -162,17 +132,15 @@ namespace Tactica.Campaign
             return true;
         }
 
-        // Debug control for testing stat growth; there is no XP to earn levels with yet.
-        public void ChangeLevel(RosterUnit unit, int delta)
-        {
-            unit.Level = Mathf.Max(1, unit.Level + delta);
-        }
-
         public void RefreshRecruitPool()
         {
             recruitPool.Clear();
 
-            List<JobDefinition> jobs = config.RecruitableJobs.Where(job => job != null).ToList();
+            DistrictDefinition district = CurrentDistrict;
+            IEnumerable<JobDefinition> source = district != null && district.hireJobs.Count > 0
+                ? district.hireJobs
+                : config.RecruitableJobs;
+            List<JobDefinition> jobs = source.Where(job => job != null).ToList();
 
             if (jobs.Count == 0)
             {
@@ -187,7 +155,7 @@ namespace Tactica.Campaign
             {
                 JobDefinition job = jobs[UnityEngine.Random.Range(0, jobs.Count)];
                 int level = UnityEngine.Random.Range(minLevel, maxLevel + 1);
-                recruitPool.Add(new RosterUnit(UniqueName(PickName()), job, level));
+                recruitPool.Add(RosterUnit.CreateFresh(UniqueName(PickName()), job, level));
             }
         }
 
@@ -196,10 +164,41 @@ namespace Tactica.Campaign
         // Flatlined crew are removed - permanent loss, FFT's crystallised units. Knocked out but not
         // flatlined means they were pulled out in time and survive, even from a defeat or retreat.
         //
-        // PLACEHOLDER progression: a won contract gives every deployed unit still standing one
-        // level, standing in for an XP/JP system.
+        // Progression is kept whatever the outcome too: JP and XP were earned by actions that
+        // happened. Each crew member's JP goes to its primary job, and every other surviving crew
+        // member in the fight gets a quarter of it in theirs (FFT's sharing; locked units neither
+        // give nor take). XP raises the character level, 100 per level.
         public void ApplyResult(MissionResult result)
         {
+            List<MissionUnitReport> crew = result.Units
+                .Where(report => report.IsFromRoster && !report.Flatlined && !report.RosterSource.Locked)
+                .ToList();
+
+            foreach (MissionUnitReport report in crew)
+            {
+                RosterUnit unit = report.RosterSource;
+                unit.GrantJP(unit.Job, report.EarnedJP);
+
+                foreach (MissionUnitReport other in crew)
+                {
+                    if (other != report)
+                    {
+                        int share = report.EarnedJP / Progression.JPShareDivisor;
+                        other.RosterSource.GrantJP(other.RosterSource.Job, share);
+                        other.SharedJP += share;
+                    }
+                }
+
+                unit.XP += report.EarnedXP;
+
+                while (unit.XP >= Progression.XPPerLevel)
+                {
+                    unit.XP -= Progression.XPPerLevel;
+                    unit.Level++;
+                    report.LevelsGained++;
+                }
+            }
+
             foreach (MissionUnitReport report in result.Units)
             {
                 if (report.IsFromRoster && report.Flatlined)
@@ -208,18 +207,75 @@ namespace Tactica.Campaign
                 }
             }
 
-            if (result.Outcome != MissionOutcome.Victory)
+            result.WasRoadEncounter = TravelDestination != null;
+
+            // Every mission moves the job boards on and buys a quiet trip.
+            BoardVersion++;
+            SafeTrips = SafeTripsAfterAFight;
+
+            if (result.Outcome == MissionOutcome.Victory)
+            {
+                MissionsWon++;
+                ApplyVictoryRewards(result);
+            }
+
+            // Won or not, the road encounter is over: winners arrive, anyone else is back where
+            // they set out from.
+            if (result.WasRoadEncounter)
+            {
+                if (result.Outcome == MissionOutcome.Victory)
+                {
+                    ArriveAt(TravelDestination);
+                }
+                else
+                {
+                    TravelDestination = null;
+                }
+            }
+        }
+
+        private void ApplyVictoryRewards(MissionResult result)
+        {
+            MissionDefinition mission = result.Mission;
+
+            result.CreditsEarned = result.WasRoadEncounter ? mission.credits / 2 : mission.credits;
+            Credits += result.CreditsEarned;
+
+            // Loot is the contract's promised pay; a road ambush has none.
+            if (!result.WasRoadEncounter)
+            {
+                foreach (EquipmentDefinition item in mission.loot.Where(item => item != null))
+                {
+                    inventory.Add(item);
+                    result.LootGained.Add(item);
+                }
+            }
+
+            if (mission.kind != MissionKind.Story || result.WasRoadEncounter)
             {
                 return;
             }
 
-            MissionsWon++;
+            finishedStory.Add(mission.missionName);
 
+            if (!string.IsNullOrEmpty(mission.unlocksDistrict) && openDistricts.Add(mission.unlocksDistrict))
+            {
+                result.DistrictUnlocked = mission.unlocksDistrict;
+            }
+
+            // Story guests stay. They join like a rescued guest - ordinary crew, not locked - and
+            // ignore the roster cap: the story does not ask whether there is room. A guest who
+            // flatlined still joins: the story needs them, and the fight was won. (FFT's story
+            // guests cannot be lost either.)
             foreach (MissionUnitReport report in result.Units)
             {
-                if (report.IsFromRoster && !report.KnockedOut)
+                if (!report.IsFromRoster && report.Job != null
+                    && report.FinalFaction == Faction.Player && mission.joinsCrew.Contains(report.Name))
                 {
-                    report.RosterSource.Level++;
+                    RosterUnit unit = RosterUnit.CreateFresh(UniqueName(report.Name), report.Job, report.Level);
+                    roster.Add(unit);
+                    report.JoinedCrew = true;
+                    result.JoinedCrew.Add(unit.Name);
                 }
             }
         }
@@ -230,7 +286,7 @@ namespace Tactica.Campaign
         // existed, any opponent could join after a victory; that stand-in is gone.)
         public static bool CanRecruitAfter(MissionResult result, MissionUnitReport report)
         {
-            return !report.IsFromRoster && !report.Flatlined && report.FinalFaction == Faction.Player;
+            return !report.IsFromRoster && !report.Flatlined && !report.JoinedCrew && report.FinalFaction == Faction.Player;
         }
 
         private string PickName()
@@ -275,59 +331,5 @@ namespace Tactica.Campaign
             return string.IsNullOrEmpty(name) ? job.JobName : name;
         }
 
-        private void RestoreUnits(List<SavedUnit> saved, List<RosterUnit> into)
-        {
-            if (saved == null)
-            {
-                return;
-            }
-
-            foreach (SavedUnit entry in saved)
-            {
-                JobDefinition job = config.FindJob(entry.job);
-
-                // Dropped rather than kept jobless: a unit with no job has zero stats and cannot
-                // act, so loading it would only produce a unit that breaks the next mission.
-                if (job == null)
-                {
-                    Debug.LogWarning(
-                        $"{nameof(CampaignState)}: job '{entry.job}' for '{entry.name}' is not in the " +
-                        $"{nameof(CampaignConfig)}. Unit dropped from the save.");
-                    continue;
-                }
-
-                into.Add(new RosterUnit(entry.name, job, Mathf.Max(1, entry.level)) { Deployed = entry.deployed });
-            }
-        }
-
-        private static SavedUnit ToSaved(RosterUnit unit)
-        {
-            return new SavedUnit
-            {
-                name = unit.Name,
-                job = unit.Job != null ? unit.Job.name : string.Empty,
-                level = unit.Level,
-                deployed = unit.Deployed,
-            };
-        }
-
-        // JsonUtility needs public fields on [Serializable] classes - no properties, no
-        // dictionaries - hence this mirror of the runtime types.
-        [Serializable]
-        private class SaveData
-        {
-            public int missionsWon;
-            public List<SavedUnit> roster = new List<SavedUnit>();
-            public List<SavedUnit> recruitPool = new List<SavedUnit>();
-        }
-
-        [Serializable]
-        private class SavedUnit
-        {
-            public string name;
-            public string job;
-            public int level;
-            public bool deployed;
-        }
     }
 }

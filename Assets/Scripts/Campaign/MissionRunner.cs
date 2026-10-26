@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Tactica.Combat;
 using Tactica.Grid;
@@ -14,13 +15,16 @@ namespace Tactica.Campaign
     // The bridge between Campaign data and the scene, in the same way PlayerActionController is
     // the bridge between combat and the grid. Neither CombatManager nor GridManager learns that
     // missions exist - they get a roster and a board, as they did when both were hand-built.
-    public class MissionRunner : MonoBehaviour
+    public partial class MissionRunner : MonoBehaviour
     {
         [Tooltip("Board to spawn on. Defaults to the first GridManager in the scene.")]
         [SerializeField] private GridManager gridManagerRef;
 
         [Tooltip("Combat to run. Defaults to the first CombatManager in the scene.")]
         [SerializeField] private CombatManager combatManagerRef;
+
+        [Tooltip("Basic attack and weapon catalogue. Defaults to Resources/CampaignConfig.")]
+        [SerializeField] private CampaignConfig config;
 
         [Tooltip("Pause between the deciding blow and the result screen, so it can be seen landing.")]
         [Min(0f)]
@@ -35,6 +39,12 @@ namespace Tactica.Campaign
 
         private readonly List<GridUnit> spawnedUnits = new List<GridUnit>();
         private readonly Dictionary<GridUnit, RosterUnit> rosterSources = new Dictionary<GridUnit, RosterUnit>();
+
+        // Side each unit started on, so the result can tell a hacked unit from a guest.
+        private readonly Dictionary<GridUnit, Faction> startingFactions = new Dictionary<GridUnit, Faction>();
+
+        // JP and XP earned per crew member this fight, from ActionResolver.OnActionResolved.
+        private readonly Dictionary<GridUnit, (int JP, int XP)> earned = new Dictionary<GridUnit, (int JP, int XP)>();
 
         // One shared material for every visor: a per-unit Renderer.material would clone a material
         // per spawn and leak each one.
@@ -52,6 +62,22 @@ namespace Tactica.Campaign
         public MissionDefinition CurrentMission => currentMission;
         private bool authoredUnitsRemoved;
 
+        // Deployment: between spawning and the first turn, the player places the crew inside a
+        // starting zone - FFT's formation step. The zone is a compact patch on the player's edge,
+        // DeployZonePerUnit tiles per crew member (at least MinDeployZone), so there is room to
+        // choose a shape but not to start anywhere on the map. Guests and opponents stay where
+        // the mission put them.
+        public const int DeployZonePerUnit = 2;
+        public const int MinDeployZone = 6;
+
+        private readonly HashSet<Vector2Int> deploymentZone = new HashSet<Vector2Int>();
+
+        public bool IsDeploying { get; private set; }
+        public IReadOnlyCollection<Vector2Int> DeploymentZone => deploymentZone;
+
+        // The crew members on the board - the units the player places and commands.
+        public IEnumerable<GridUnit> Crew => spawnedUnits.Where(unit => unit != null && rosterSources.ContainsKey(unit));
+
         private void Awake()
         {
             if (gridManagerRef == null)
@@ -63,6 +89,11 @@ namespace Tactica.Campaign
             {
                 combatManagerRef = FindAnyObjectByType<CombatManager>();
             }
+
+            if (config == null)
+            {
+                config = Resources.Load<CampaignConfig>(CampaignConfig.ResourcePath);
+            }
         }
 
         private void OnEnable()
@@ -70,6 +101,7 @@ namespace Tactica.Campaign
             if (combatManagerRef != null)
             {
                 combatManagerRef.OnCombatEnded += HandleCombatEnded;
+                combatManagerRef.OnActiveUnitChanged += CountSurvivedTurn;
             }
         }
 
@@ -78,11 +110,12 @@ namespace Tactica.Campaign
             if (combatManagerRef != null)
             {
                 combatManagerRef.OnCombatEnded -= HandleCombatEnded;
+                combatManagerRef.OnActiveUnitChanged -= CountSurvivedTurn;
             }
         }
 
-        // Spawns both sides and starts combat. Returns false with a reason instead of starting a
-        // half-built encounter.
+        // Spawns both sides and opens deployment; BeginBattle starts the fight once the crew is
+        // placed. Returns false with a reason instead of starting a half-built encounter.
         public bool StartMission(MissionDefinition mission, IReadOnlyList<RosterUnit> deployed, out string error)
         {
             error = null;
@@ -116,17 +149,36 @@ namespace Tactica.Campaign
 
             foreach (RosterUnit rosterUnit in deployed)
             {
-                GridUnit unit = Spawn(rosterUnit.Name, rosterUnit.Job, rosterUnit.Level, Faction.Player);
+                GridUnit unit = Spawn(rosterUnit.Name, rosterUnit.Job, rosterUnit.Level, Faction.Player, false, null, 1f);
 
                 if (unit != null)
                 {
                     rosterSources[unit] = rosterUnit;
+
+                    // What the unit has learned, not its job's level unlocks - after the basic Attack.
+                    unit.SetActionLoadout(WithBasicAttack(rosterUnit.ActionLoadout()));
+                    unit.SetWeapon(rosterUnit.Weapon);
+                    unit.SetPassives(rosterUnit.Reaction, rosterUnit.Support, rosterUnit.Movement);
                 }
             }
 
             foreach (UnitEntry entry in mission.opponents)
             {
-                Spawn(entry.unitName, entry.job, entry.level, entry.faction, entry.guest);
+                GridUnit unit = Spawn(entry.unitName, entry.job, entry.level, entry.faction, entry.guest, entry.modelOverride, entry.modelScale);
+
+                if (unit == null)
+                {
+                    continue;
+                }
+
+                // Opponents fight with their job's fixed kit by level, its default weapon, and the
+                // first Reaction ability the kit unlocks.
+                List<AbilityDefinition> kit = entry.job.GetUnlockedAbilities(entry.level);
+                unit.SetActionLoadout(WithBasicAttack(kit.Where(a => a.Slot == AbilitySlot.Action)));
+                unit.SetWeapon(entry.job.DefaultWeapon);
+                unit.SetPassives(kit.FirstOrDefault(a => a.Slot == AbilitySlot.Reaction), null, null);
+                unit.SetHackResistance(entry.hackResistance);
+                unit.SetBoss(entry.boss);
             }
 
             if (spawnedUnits.Count == 0)
@@ -138,81 +190,88 @@ namespace Tactica.Campaign
             }
 
             Debug.Log($"Mission start: {mission.missionName} ({spawnedUnits.Count} units). " +
-                      $"Objective: {mission.DescribeObjective()}.", this);
+                      $"Objective: {mission.DescribeObjective()}. Deploying.", this);
 
-            combatManagerRef.StartCombat(spawnedUnits);
-            WatchObjective(mission);
+            BuildDeploymentZone();
+            IsDeploying = true;
+            gridManagerRef.ShowDeployZone(deploymentZone);
             return true;
         }
 
-        // Subscribed after StartCombat, so spawning and the first stat fill cannot trip it.
-        private void WatchObjective(MissionDefinition mission)
+        // Ends deployment and starts the fight with the crew where the player left it.
+        public bool BeginBattle()
         {
-            objectiveUnit = null;
-
-            if (mission.objective == MissionObjective.DefeatAll)
+            if (!IsDeploying)
             {
-                return;
+                return false;
             }
 
-            objectiveUnit = spawnedUnits.Find(unit => unit != null && unit.DisplayName == mission.objectiveUnitName);
+            IsDeploying = false;
+            deploymentZone.Clear();
+            gridManagerRef.ClearDeployZone();
 
-            if (objectiveUnit == null)
+            foreach (GridUnit unit in spawnedUnits)
             {
-                Debug.LogWarning(
-                    $"{nameof(MissionRunner)}: objective unit '{mission.objectiveUnitName}' is not in " +
-                    $"'{mission.missionName}'. Falling back to defeating all enemies.",
-                    this);
-                return;
+                startingFactions[unit] = unit.CurrentFaction;
             }
 
-            objectiveUnit.StatsChanged += CheckObjective;
+            earned.Clear();
+            combatManagerRef.Resolver.OnActionResolved += RecordProgress;
+
+            survivedTurns = 0;
+            combatManagerRef.StartCombat(spawnedUnits);
+            WatchObjective(currentMission);
+            return true;
         }
 
-        private void StopWatchingObjective()
+        // JP and XP for crew members' effective actions. JP uses the unit's current job level
+        // and character level at the moment it acts, which is what the formula describes.
+        private void RecordProgress(ActionOutcome outcome)
         {
-            if (objectiveUnit != null)
-            {
-                objectiveUnit.StatsChanged -= CheckObjective;
-                objectiveUnit = null;
-            }
-        }
-
-        // Ends the fight early when the objective is met or failed. Can run in the middle of an
-        // action's resolution (a knockout raises StatsChanged from ApplyDamage); that is safe
-        // because the controllers' own TryEndCombatNow afterwards just sees combat already over.
-        private void CheckObjective()
-        {
-            if (!IsRunning || objectiveUnit == null || combatManagerRef.CurrentState == CombatState.CombatEnd)
+            if (!outcome.Effective || outcome.User == null)
             {
                 return;
             }
 
-            switch (currentMission.objective)
+            if (!rosterSources.TryGetValue(outcome.User, out RosterUnit source) || source.Locked)
             {
-                case MissionObjective.DefeatTarget:
-                    if (objectiveUnit.IsKnockedOut || objectiveUnit.CurrentFaction != Faction.Enemy)
-                    {
-                        Debug.Log($"Objective met: {objectiveUnit.DisplayName} neutralized.", this);
-                        combatManagerRef.EndCombat(CombatEndResult.PlayerVictory);
-                    }
-                    break;
-
-                case MissionObjective.Protect:
-                    if (objectiveUnit.IsKnockedOut)
-                    {
-                        Debug.Log($"Objective failed: {objectiveUnit.DisplayName} went down.", this);
-                        combatManagerRef.EndCombat(CombatEndResult.PlayerDefeat);
-                    }
-                    break;
+                return;
             }
+
+            int jp = Progression.JPForAction(source.JobLevel(source.Job), source.Level);
+
+            // JP Boost and the like.
+            if (source.Support != null && source.Support.JPBonusPercent > 0)
+            {
+                jp = jp * (100 + source.Support.JPBonusPercent) / 100;
+            }
+            int targetLevel = outcome.Target != null ? outcome.Target.Level : outcome.User.Level;
+            int xp = Progression.XPForAction(outcome.User.Level, targetLevel, outcome.KnockedOut);
+
+            earned.TryGetValue(outcome.User, out (int JP, int XP) total);
+            earned[outcome.User] = (total.JP + jp, total.XP + xp);
+        }
+
+        // The configured basic Attack first, then the rest - so the Act menu always opens on it.
+        private List<AbilityDefinition> WithBasicAttack(IEnumerable<AbilityDefinition> abilities)
+        {
+            List<AbilityDefinition> loadout = new List<AbilityDefinition>();
+            AbilityDefinition basic = config != null ? config.BasicAttack : null;
+
+            if (basic != null)
+            {
+                loadout.Add(basic);
+            }
+
+            loadout.AddRange(abilities.Where(a => a != null && a != basic));
+            return loadout;
         }
 
         // Leaves without a decision. The result still goes out, as a Retreat, so the menu has
         // one path back to the hub whichever way a mission ends.
         public void Retreat()
         {
-            if (!IsRunning || finishRoutine != null)
+            if (!IsRunning || IsDeploying || finishRoutine != null)
             {
                 return;
             }
@@ -261,6 +320,7 @@ namespace Tactica.Campaign
             }
 
             StopWatchingObjective();
+            combatManagerRef.Resolver.OnActionResolved -= RecordProgress;
 
             // Snapshotted before the board is cleared - the reports outlive the GridUnits.
             MissionResult result = BuildResult(outcome);
@@ -286,6 +346,9 @@ namespace Tactica.Campaign
                     continue;
                 }
 
+                startingFactions.TryGetValue(unit, out Faction startFaction);
+                earned.TryGetValue(unit, out (int JP, int XP) progress);
+
                 result.Units.Add(new MissionUnitReport
                 {
                     Name = unit.DisplayName,
@@ -294,6 +357,9 @@ namespace Tactica.Campaign
                     FinalFaction = unit.CurrentFaction,
                     KnockedOut = unit.IsKnockedOut,
                     Flatlined = unit.IsFlatlined,
+                    Hacked = startFaction != Faction.Player && unit.CurrentFaction == Faction.Player,
+                    EarnedJP = progress.JP,
+                    EarnedXP = progress.XP,
                     RosterSource = GetRosterSource(unit),
                 });
             }
@@ -301,191 +367,5 @@ namespace Tactica.Campaign
             return result;
         }
 
-        // Creates a capsule unit on a free tile on its side of the board.
-        //
-        // Built inactive and configured before activation, so GridUnit.Awake computes stats from
-        // the right job and level on its one and only run. Activating first would initialise from
-        // an empty job, log a warning, and then need a second, full-heal initialisation.
-        private GridUnit Spawn(string unitName, JobDefinition job, int level, Faction faction, bool guest = false)
-        {
-            if (job == null)
-            {
-                Debug.LogWarning($"{nameof(MissionRunner)}: '{unitName}' has no job and was not spawned.", this);
-                return null;
-            }
-
-            if (!TryFindSpawnTile(faction, out Vector2Int coords))
-            {
-                Debug.LogWarning($"{nameof(MissionRunner)}: no free tile for '{unitName}' ({faction}).", this);
-                return null;
-            }
-
-            // Unity's Capsule is 2 tall with a centred pivot - GridUnit's default pivotHeight of
-            // 1.0 is sized for exactly this.
-            GameObject unitObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            unitObject.SetActive(false);
-
-            GridUnit unit = unitObject.AddComponent<GridUnit>();
-            unit.Configure(unitName, job, level, faction, coords, guest);
-            unitObject.name = $"{unit.DisplayName} ({faction})";
-
-            // Each side starts looking across the board at the other. Neutrals face the player's
-            // edge, which is where trouble usually comes from.
-            unit.SetFacing(faction == Faction.Player ? Facing.North : Facing.South);
-            AddVisor(unitObject);
-
-            unitObject.SetActive(true);
-
-            // Claimed now rather than in GridUnit.Start (next frame), so the next spawn in this
-            // same loop sees the tile as taken.
-            gridManagerRef.SetOccupant(coords, unitObject);
-            unit.SnapToGridPosition();
-
-            spawnedUnits.Add(unit);
-            return unit;
-        }
-
-        // A neon strip on the capsule's +Z side, so facing - which decides back and side attacks -
-        // can be read at a glance. Child of the unit, so it turns with GridUnit.SetFacing.
-        private static void AddVisor(GameObject unitObject)
-        {
-            GameObject visor = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            visor.name = "Visor";
-
-            // Purely visual. A collider here would be one more thing in front of the tile raycast
-            // and the unit's own collider.
-            UnityEngine.Object.DestroyImmediate(visor.GetComponent<Collider>());
-
-            visor.transform.SetParent(unitObject.transform, false);
-            visor.transform.localPosition = new Vector3(0f, 0.45f, 0.42f);
-            visor.transform.localScale = new Vector3(0.55f, 0.14f, 0.2f);
-
-            Renderer renderer = visor.GetComponent<Renderer>();
-
-            if (visorMaterial == null)
-            {
-                visorMaterial = new Material(renderer.sharedMaterial) { color = VisorColor };
-                visorMaterial.hideFlags = HideFlags.HideAndDontSave;
-            }
-
-            renderer.sharedMaterial = visorMaterial;
-        }
-
-        // Player fills rows from the near edge, Enemy from the far edge, Neutral from the middle
-        // outwards. Within a row, columns closest to the centre go first, so small squads face
-        // each other instead of hugging a corner.
-        private bool TryFindSpawnTile(Faction faction, out Vector2Int coords)
-        {
-            int width = gridManagerRef.GridWidth;
-            int depth = gridManagerRef.GridDepth;
-
-            foreach (int z in RowOrder(faction, depth))
-            {
-                foreach (int x in CentreOutOrder(width))
-                {
-                    Vector2Int candidate = new Vector2Int(x, z);
-
-                    if (gridManagerRef.TryGetTile(candidate, out GridTile tile) && tile.IsFree)
-                    {
-                        coords = candidate;
-                        return true;
-                    }
-                }
-            }
-
-            coords = default;
-            return false;
-        }
-
-        private static IEnumerable<int> RowOrder(Faction faction, int depth)
-        {
-            switch (faction)
-            {
-                case Faction.Player:
-                    for (int z = 0; z < depth; z++) yield return z;
-                    break;
-
-                case Faction.Enemy:
-                    for (int z = depth - 1; z >= 0; z--) yield return z;
-                    break;
-
-                case Faction.Neutral:
-                    foreach (int z in CentreOutOrder(depth)) yield return z;
-                    break;
-            }
-        }
-
-        private static IEnumerable<int> CentreOutOrder(int count)
-        {
-            if (count <= 0)
-            {
-                yield break;
-            }
-
-            int centre = (count - 1) / 2;
-            yield return centre;
-
-            for (int distance = 1; distance < count; distance++)
-            {
-                if (centre + distance < count) yield return centre + distance;
-                if (centre - distance >= 0) yield return centre - distance;
-            }
-        }
-
-        // Destroys every spawned unit and releases its tile. GridUnit.OnDestroy releases it too,
-        // but Destroy is deferred to the end of the frame; clearing now means the board is
-        // genuinely empty the moment the result is announced.
-        private void ClearBoard()
-        {
-            gridManagerRef.ClearMoveRangeHighlight();
-            gridManagerRef.ClearAttackableHighlights();
-            gridManagerRef.ClearCursorHighlight();
-
-            foreach (GridUnit unit in spawnedUnits)
-            {
-                if (unit == null)
-                {
-                    continue;
-                }
-
-                gridManagerRef.SetOccupant(unit.GridCoords, null);
-                Destroy(unit.gameObject);
-            }
-
-            spawnedUnits.Clear();
-            rosterSources.Clear();
-        }
-
-        // The scene's hand-placed units were a test fixture for combat. Once the mission flow is
-        // driving, they would only stand on spawn tiles and fight in no one's encounter.
-        //
-        // Deactivated before being destroyed: Destroy is deferred to the end of the frame, and a
-        // unit whose Start has not run yet would otherwise still claim its tile in the meantime.
-        private void RemoveAuthoredUnits()
-        {
-            if (authoredUnitsRemoved)
-            {
-                return;
-            }
-
-            authoredUnitsRemoved = true;
-
-            foreach (GridUnit unit in FindObjectsByType<GridUnit>(FindObjectsInactive.Include))
-            {
-                if (spawnedUnits.Contains(unit))
-                {
-                    continue;
-                }
-
-                unit.gameObject.SetActive(false);
-
-                if (gridManagerRef.TryGetTile(unit.GridCoords, out GridTile tile) && tile.Occupant == unit.gameObject)
-                {
-                    gridManagerRef.SetOccupant(unit.GridCoords, null);
-                }
-
-                Destroy(unit.gameObject);
-            }
-        }
     }
 }

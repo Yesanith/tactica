@@ -24,5 +24,19 @@ namespace Tactica.Campaign
         [Tooltip("AI-driven even on the Player side - an escort or civilian, FFT's guest. Ignored " +
                  "for the starting roster.")]
         public bool guest;
+
+        [Tooltip("Model for this unit instead of its job's - a boss or a named character.")]
+        public GameObject modelOverride;
+
+        [Tooltip("Uniform scale for the model. A bigger silhouette is the cheapest way to read a " +
+                 "boss at a glance. 0 or less is treated as 1.")]
+        public float modelScale = 1f;
+
+        [Tooltip("Percent taken off Override chances against this unit. Bosses resist.")]
+        [Min(0)]
+        public int hackResistance;
+
+        [Tooltip("A boss: area Overrides work at reduced strength against it.")]
+        public bool boss;
     }
 }

@@ -11,20 +11,62 @@ MonoBehaviour:
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 7c3f1a9e5b2d4c6e8f0a1b2c3d4e5f60, type: 3}
   m_Name: CampaignConfig
-  m_EditorClassIdentifier:
+  m_EditorClassIdentifier: 
   startWithMenu: 1
+  showDebugTools: 0
   startingRoster:
   - unitName: Aria
     job: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
     level: 2
     faction: 0
-  - unitName: Bram
-    job: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+    guest: 0
+    modelOverride: {fileID: 0}
+    modelScale: 1
+    hackResistance: 0
+    boss: 0
+  - unitName: Rex
+    job: {fileID: 11400000, guid: d7dfb95049e04f44c9c7d30b6e97fe03, type: 2}
     level: 1
     faction: 0
+    guest: 0
+    modelOverride: {fileID: 0}
+    modelScale: 1
+    hackResistance: 0
+    boss: 0
+  - unitName: Bram
+    job: {fileID: 11400000, guid: 4192de1eb5a6fe3449f6384c93137b24, type: 2}
+    level: 1
+    faction: 0
+    guest: 0
+    modelOverride: {fileID: 0}
+    modelScale: 1
+    hackResistance: 0
+    boss: 0
+  playerJobs:
+  - {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+  - {fileID: 11400000, guid: 4606ccb54319b2d439e46310ed617a4b, type: 2}
+  - {fileID: 11400000, guid: 5cb2205fff668ef479e0cdc677d3f6c5, type: 2}
+  - {fileID: 11400000, guid: d7dfb95049e04f44c9c7d30b6e97fe03, type: 2}
+  - {fileID: 11400000, guid: 4192de1eb5a6fe3449f6384c93137b24, type: 2}
+  - {fileID: 11400000, guid: fde56223d9c04ed44bc0b87ed47ecdfd, type: 2}
+  - {fileID: 11400000, guid: 9a7b4b27283a52549b57519a9afb9bd5, type: 2}
+  - {fileID: 11400000, guid: 74b17afc55bd2f944be71e9fdbf0bdda, type: 2}
+  - {fileID: 11400000, guid: 537e118b265adb749ae7b8314d3c9c88, type: 2}
+  - {fileID: 11400000, guid: dd7c6bb3f99498d45abb020252ad6341, type: 2}
+  - {fileID: 11400000, guid: 45e19e20aa4b8174ba29e7680a11c5aa, type: 2}
+  - {fileID: 11400000, guid: 226c19a9f9773e9428a8de07b6ff4aef, type: 2}
+  - {fileID: 11400000, guid: b3350ebceb6bcf44cba40e4eaae5330d, type: 2}
+  - {fileID: 11400000, guid: 6f707abb15c94a9418a24664b332f996, type: 2}
+  - {fileID: 11400000, guid: b0523895c2bedc74ca9d28b7d06dd47a, type: 2}
+  - {fileID: 11400000, guid: ec7579756a160944981e8fde4d847b0f, type: 2}
+  - {fileID: 11400000, guid: 1758d02ee87f84848b71ce0672452154, type: 2}
+  - {fileID: 11400000, guid: 4103a6dbeb64cf441b593982969bd0db, type: 2}
   recruitableJobs:
   - {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
-  - {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+  - {fileID: 11400000, guid: 4606ccb54319b2d439e46310ed617a4b, type: 2}
+  - {fileID: 11400000, guid: 5cb2205fff668ef479e0cdc677d3f6c5, type: 2}
+  - {fileID: 11400000, guid: d7dfb95049e04f44c9c7d30b6e97fe03, type: 2}
+  - {fileID: 11400000, guid: 4192de1eb5a6fe3449f6384c93137b24, type: 2}
   recruitNames:
   - Cass
   - Dax
@@ -40,7 +82,222 @@ MonoBehaviour:
   maxDeployed: 4
   recruitPoolSize: 3
   recruitLevelRange: {x: 1, y: 3}
+  basicAttack: {fileID: 11400000, guid: 5413a9ee94f3ec4449b031c971c142c1, type: 2}
+  equipment:
+  - {fileID: 11400000, guid: 45405172978555748ac11a29c40487dc, type: 2}
+  - {fileID: 11400000, guid: 36fdf835fac0234439af346bbbf0726f, type: 2}
+  - {fileID: 11400000, guid: c75e321aa2fe35b4e9af2ab7fd09cba4, type: 2}
+  - {fileID: 11400000, guid: 372a47c54ad456649a6c00779f31d05f, type: 2}
+  - {fileID: 11400000, guid: 985af6f2cc969aa468531fd2c560a409, type: 2}
+  - {fileID: 11400000, guid: 031852ffb2d35ef468260350d7c80ff5, type: 2}
+  - {fileID: 11400000, guid: 260b6c4128601934896753d9896e2d10, type: 2}
+  - {fileID: 11400000, guid: ba93d9066eb091d44962c31b66f30226, type: 2}
+  - {fileID: 11400000, guid: 773902ea7f008104ebdb2011caade569, type: 2}
+  - {fileID: 11400000, guid: f632e0432fed3a2429a964e5e20993db, type: 2}
+  - {fileID: 11400000, guid: ec2ec2c057959a944a142451340647b1, type: 2}
+  - {fileID: 11400000, guid: 4df2a7c55ec201046be214082f825f58, type: 2}
+  - {fileID: 11400000, guid: f4fab8ec679aa264c83f5fac5f489169, type: 2}
+  - {fileID: 11400000, guid: e3e2835846dea964e9d3b5d27c8f4f45, type: 2}
+  - {fileID: 11400000, guid: d66262474cae5a54bbf52ca6fd2469f2, type: 2}
+  - {fileID: 11400000, guid: 2028390e8a04e7f4ba804e93bc9f3f9c, type: 2}
+  - {fileID: 11400000, guid: a3fa8b0973cc31a4a88e7d7e53e5e5bd, type: 2}
+  - {fileID: 11400000, guid: 0f893a6cda28e6944a4b2f875e3dfe68, type: 2}
+  - {fileID: 11400000, guid: e0487fa2ac529cd48ad6609bdb246b6d, type: 2}
+  - {fileID: 11400000, guid: 6b3726c3f2678b049b83cac4a7fbcd8a, type: 2}
+  - {fileID: 11400000, guid: 8f2251816aaaff648974d2e6f8d5241f, type: 2}
+  startingInventory:
+  - {fileID: 11400000, guid: c75e321aa2fe35b4e9af2ab7fd09cba4, type: 2}
+  - {fileID: 11400000, guid: 985af6f2cc969aa468531fd2c560a409, type: 2}
+  - {fileID: 11400000, guid: 260b6c4128601934896753d9896e2d10, type: 2}
+  districts:
+  - districtName: Neon Row
+    description: Noodle stands, holo-ads and back-alley clinics. Home turf.
+    danger: 1
+    dominantFaction: Street gangs
+    connections:
+    - Rustyard
+    openFromStart: 1
+    shopStock:
+    - {fileID: 11400000, guid: 45405172978555748ac11a29c40487dc, type: 2}
+    - {fileID: 11400000, guid: c75e321aa2fe35b4e9af2ab7fd09cba4, type: 2}
+    - {fileID: 11400000, guid: 985af6f2cc969aa468531fd2c560a409, type: 2}
+    - {fileID: 11400000, guid: ec2ec2c057959a944a142451340647b1, type: 2}
+    - {fileID: 11400000, guid: 773902ea7f008104ebdb2011caade569, type: 2}
+    hireJobs:
+    - {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+    - {fileID: 11400000, guid: 4606ccb54319b2d439e46310ed617a4b, type: 2}
+    - {fileID: 11400000, guid: d7dfb95049e04f44c9c7d30b6e97fe03, type: 2}
+    - {fileID: 11400000, guid: 4192de1eb5a6fe3449f6384c93137b24, type: 2}
+    - {fileID: 11400000, guid: 5cb2205fff668ef479e0cdc677d3f6c5, type: 2}
+    listings:
+    - Street Sweep
+    - Gang Turf
+    story:
+    - Velvet Room Raid
+    roadEncounters:
+    - Street Sweep
+    enemyPool:
+    - {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+    - {fileID: 11400000, guid: 20c942df07d3b7e438d59561829cd467, type: 2}
+    - {fileID: 11400000, guid: 5be4d25b3f9062c46b5ed2e33fdaf9ba, type: 2}
+    clearedStock:
+    - {fileID: 11400000, guid: 36fdf835fac0234439af346bbbf0726f, type: 2}
+    - {fileID: 11400000, guid: 372a47c54ad456649a6c00779f31d05f, type: 2}
+    - {fileID: 11400000, guid: 031852ffb2d35ef468260350d7c80ff5, type: 2}
+    - {fileID: 11400000, guid: 4df2a7c55ec201046be214082f825f58, type: 2}
+    - {fileID: 11400000, guid: f632e0432fed3a2429a964e5e20993db, type: 2}
+    safeRoads: []
+  - districtName: Rustyard
+    description: Junk towers and chop shops where the city's chrome goes to be stripped.
+    danger: 3
+    dominantFaction: Scrap raiders
+    connections:
+    - Neon Row
+    - Spire Gate
+    openFromStart: 0
+    shopStock:
+    - {fileID: 11400000, guid: 45405172978555748ac11a29c40487dc, type: 2}
+    - {fileID: 11400000, guid: c75e321aa2fe35b4e9af2ab7fd09cba4, type: 2}
+    - {fileID: 11400000, guid: 985af6f2cc969aa468531fd2c560a409, type: 2}
+    - {fileID: 11400000, guid: ec2ec2c057959a944a142451340647b1, type: 2}
+    - {fileID: 11400000, guid: 773902ea7f008104ebdb2011caade569, type: 2}
+    - {fileID: 11400000, guid: 260b6c4128601934896753d9896e2d10, type: 2}
+    - {fileID: 11400000, guid: f4fab8ec679aa264c83f5fac5f489169, type: 2}
+    - {fileID: 11400000, guid: 372a47c54ad456649a6c00779f31d05f, type: 2}
+    - {fileID: 11400000, guid: 4df2a7c55ec201046be214082f825f58, type: 2}
+    hireJobs:
+    - {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+    - {fileID: 11400000, guid: 4606ccb54319b2d439e46310ed617a4b, type: 2}
+    - {fileID: 11400000, guid: d7dfb95049e04f44c9c7d30b6e97fe03, type: 2}
+    - {fileID: 11400000, guid: 4192de1eb5a6fe3449f6384c93137b24, type: 2}
+    - {fileID: 11400000, guid: 5cb2205fff668ef479e0cdc677d3f6c5, type: 2}
+    listings:
+    - Block Watch
+    - Courier Run
+    story:
+    - Chrome Brute
+    roadEncounters:
+    - Gang Turf
+    - Block Watch
+    enemyPool:
+    - {fileID: 11400000, guid: 5be4d25b3f9062c46b5ed2e33fdaf9ba, type: 2}
+    - {fileID: 11400000, guid: 20c942df07d3b7e438d59561829cd467, type: 2}
+    - {fileID: 11400000, guid: 866004020d98fbf4c8f1deef8b0a8ee4, type: 2}
+    - {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+    clearedStock:
+    - {fileID: 11400000, guid: d66262474cae5a54bbf52ca6fd2469f2, type: 2}
+    - {fileID: 11400000, guid: 2028390e8a04e7f4ba804e93bc9f3f9c, type: 2}
+    - {fileID: 11400000, guid: a3fa8b0973cc31a4a88e7d7e53e5e5bd, type: 2}
+    - {fileID: 11400000, guid: 0f893a6cda28e6944a4b2f875e3dfe68, type: 2}
+    safeRoads: []
+  - districtName: Spire Gate
+    description: Clean glass, armed drones, and the Kingpin's relay hidden among the towers.
+    danger: 4
+    dominantFaction: Corp security
+    connections:
+    - Rustyard
+    openFromStart: 0
+    shopStock:
+    - {fileID: 11400000, guid: 36fdf835fac0234439af346bbbf0726f, type: 2}
+    - {fileID: 11400000, guid: 372a47c54ad456649a6c00779f31d05f, type: 2}
+    - {fileID: 11400000, guid: 031852ffb2d35ef468260350d7c80ff5, type: 2}
+    - {fileID: 11400000, guid: ba93d9066eb091d44962c31b66f30226, type: 2}
+    - {fileID: 11400000, guid: f632e0432fed3a2429a964e5e20993db, type: 2}
+    - {fileID: 11400000, guid: 4df2a7c55ec201046be214082f825f58, type: 2}
+    - {fileID: 11400000, guid: e3e2835846dea964e9d3b5d27c8f4f45, type: 2}
+    hireJobs: []
+    listings:
+    - Data Heist
+    story:
+    - Cut the Signal
+    roadEncounters:
+    - Courier Run
+    enemyPool:
+    - {fileID: 11400000, guid: 6329e077b59da82469a37a7c7936787d, type: 2}
+    - {fileID: 11400000, guid: 08d006b48ff462c4fbf5b8486e06df17, type: 2}
+    - {fileID: 11400000, guid: c3dbfd7cb60f4394b9558eb69e889674, type: 2}
+    clearedStock:
+    - {fileID: 11400000, guid: e0487fa2ac529cd48ad6609bdb246b6d, type: 2}
+    - {fileID: 11400000, guid: 6b3726c3f2678b049b83cac4a7fbcd8a, type: 2}
+    - {fileID: 11400000, guid: 8f2251816aaaff648974d2e6f8d5241f, type: 2}
+    - {fileID: 11400000, guid: a3fa8b0973cc31a4a88e7d7e53e5e5bd, type: 2}
+    - {fileID: 11400000, guid: 0f893a6cda28e6944a4b2f875e3dfe68, type: 2}
+    safeRoads: []
+  startingDistrict: Neon Row
+  startingCredits: 300
+  hireCostPerLevel: 80
+  generatedListings: 2
+  escortJob: {fileID: 11400000, guid: d7dfb95049e04f44c9c7d30b6e97fe03, type: 2}
   missions:
+  - missionName: Velvet Room Raid
+    description: Jacknife's crew holds the Velvet Room club. Yuki wants them gone.
+    map:
+      width: 14
+      depth: 12
+      seed: 707
+      maxHeight: 2
+      heightStep: 0.5
+      edgeDepth: 2
+      holeChance: 0.04
+      coverChance: 0.06
+    objective: 1
+    kind: 1
+    credits: 250
+    loot:
+    - {fileID: 11400000, guid: c75e321aa2fe35b4e9af2ab7fd09cba4, type: 2}
+    introText: Yuki, a sharpshooter who dances at the club, found you at the noodle stand. Jacknife's crew took the Velvet Room and her pay with it. She fights beside you tonight - take Jacknife down.
+    outroText: Jacknife crawls out the back door. Yuki lowers her rifle and decides your crew is worth sticking with. Word is the Rustyard scrappers ran Jacknife's guns.
+    unlocksDistrict: Rustyard
+    joinsCrew:
+    - Yuki
+    surviveTurns: 6
+    objectiveUnitName: Jacknife
+    opponents:
+    - unitName: Jacknife
+      job: {fileID: 11400000, guid: 5be4d25b3f9062c46b5ed2e33fdaf9ba, type: 2}
+      level: 3
+      faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 30
+      boss: 1
+    - unitName: Gooner A
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 2
+      faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Gooner B
+      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      level: 2
+      faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Slinger
+      job: {fileID: 11400000, guid: 20c942df07d3b7e438d59561829cd467, type: 2}
+      level: 2
+      faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Yuki
+      job: {fileID: 11400000, guid: 5cb2205fff668ef479e0cdc677d3f6c5, type: 2}
+      level: 2
+      faction: 0
+      guest: 1
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
   - missionName: Street Sweep
     description: One ganger on a dead-end block. The quickest full contract loop.
     map:
@@ -52,13 +309,28 @@ MonoBehaviour:
       edgeDepth: 2
       holeChance: 0.04
       coverChance: 0.04
+    objective: 0
+    kind: 0
+    credits: 100
+    loot: []
+    introText: 
+    outroText: 
+    unlocksDistrict: 
+    joinsCrew: []
+    surviveTurns: 6
+    objectiveUnitName: 
     opponents:
     - unitName: Gooner
       job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
       level: 1
       faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
   - missionName: Gang Turf
-    description: Three Gooners holding a noodle-bar rooftop. Fast, and they come round often.
+    description: Two Gooners and a Slinger holding a noodle-bar rooftop. The Gooners are fast; the Slinger shoots from range.
     map:
       width: 14
       depth: 11
@@ -68,19 +340,44 @@ MonoBehaviour:
       edgeDepth: 2
       holeChance: 0.06
       coverChance: 0.06
+    objective: 0
+    kind: 0
+    credits: 150
+    loot: []
+    introText: 
+    outroText: 
+    unlocksDistrict: 
+    joinsCrew: []
+    surviveTurns: 6
+    objectiveUnitName: 
     opponents:
     - unitName: Gooner A
       job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
       level: 1
       faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
     - unitName: Gooner B
       job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
       level: 2
       faction: 1
-    - unitName: Gooner C
-      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Slinger
+      job: {fileID: 11400000, guid: 20c942df07d3b7e438d59561829cd467, type: 2}
       level: 1
       faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
   - missionName: Block Watch
     description: Two raiders shaking down a civilian netrunner. She fights on your side but makes her own calls. Keep her alive.
     map:
@@ -93,23 +390,45 @@ MonoBehaviour:
       holeChance: 0.05
       coverChance: 0.08
     objective: 2
+    kind: 0
+    credits: 180
+    loot: []
+    introText: 
+    outroText: 
+    unlocksDistrict: 
+    joinsCrew: []
+    surviveTurns: 6
     objectiveUnitName: Civilian
     opponents:
     - unitName: Raider
-      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      job: {fileID: 11400000, guid: 5be4d25b3f9062c46b5ed2e33fdaf9ba, type: 2}
       level: 2
       faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
     - unitName: Raider 2
-      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      job: {fileID: 11400000, guid: 5be4d25b3f9062c46b5ed2e33fdaf9ba, type: 2}
       level: 2
       faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
     - unitName: Civilian
-      job: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+      job: {fileID: 11400000, guid: d7dfb95049e04f44c9c7d30b6e97fe03, type: 2}
       level: 1
       faction: 0
       guest: 1
+      modelOverride: {fileID: 100046, guid: f671e87896ed58c4e972db58101c2d27, type: 3}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
   - missionName: Chrome Brute
-    description: One heavily augmented enforcer. Expect to lose someone; reboot them before they flatline.
+    description: One heavily augmented enforcer - slow, armoured, and his Piston Slam hits everything around him. Reboot whoever drops before they flatline.
     map:
       width: 12
       depth: 12
@@ -119,13 +438,29 @@ MonoBehaviour:
       edgeDepth: 2
       holeChance: 0.03
       coverChance: 0.05
+    objective: 0
+    kind: 1
+    credits: 300
+    loot:
+    - {fileID: 11400000, guid: 36fdf835fac0234439af346bbbf0726f, type: 2}
+    introText: The Rustyard's chrome-plated enforcer guards the only road to the Spire Gate. Bring it down.
+    outroText: The brute's chassis hits the scrap pile. The road north to the corporate Spire Gate is open.
+    unlocksDistrict: Spire Gate
+    joinsCrew: []
+    surviveTurns: 6
+    objectiveUnitName: 
     opponents:
     - unitName: Chrome Brute
-      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
-      level: 6
+      job: {fileID: 11400000, guid: 27b21708e2114d54a9a385251bb43c96, type: 2}
+      level: 3
       faction: 1
+      guest: 0
+      modelOverride: {fileID: 100500, guid: 54c925df2b321cd47b92004382c85291, type: 3}
+      modelScale: 1.3
+      hackResistance: 30
+      boss: 1
   - missionName: Cut the Signal
-    description: A gang Kingpin runs the block's relay. Drop or hack him and the crew scatters. His guards can reboot each other.
+    description: A gang Kingpin runs the block's relay. Drop or hack him and the crew scatters. His Patch Rat reboots anyone who goes down, and he resists hacking.
     map:
       width: 16
       depth: 12
@@ -136,20 +471,44 @@ MonoBehaviour:
       holeChance: 0.06
       coverChance: 0.07
     objective: 1
+    kind: 1
+    credits: 500
+    loot:
+    - {fileID: 11400000, guid: 031852ffb2d35ef468260350d7c80ff5, type: 2}
+    introText: The Kingpin broadcasts from a relay at the Spire Gate. Cut the signal and the city's gangs lose their voice.
+    outroText: Static on every channel. For one night, the Neon District belongs to nobody - and your crew is the name on everyone's lips.
+    unlocksDistrict: 
+    joinsCrew: []
+    surviveTurns: 6
     objectiveUnitName: Kingpin
     opponents:
     - unitName: Kingpin
-      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
-      level: 4
-      faction: 1
-    - unitName: Guard A
-      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      job: {fileID: 11400000, guid: 3ea6483bd29eb144a8b4217920442ef7, type: 2}
       level: 3
       faction: 1
-    - unitName: Guard B
-      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
-      level: 3
+      guest: 0
+      modelOverride: {fileID: 100184, guid: d5025efbcc7ae004db8312cd46d86e5d, type: 3}
+      modelScale: 1.1
+      hackResistance: 20
+      boss: 1
+    - unitName: Patch Rat
+      job: {fileID: 11400000, guid: 866004020d98fbf4c8f1deef8b0a8ee4, type: 2}
+      level: 2
       faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Raider
+      job: {fileID: 11400000, guid: 5be4d25b3f9062c46b5ed2e33fdaf9ba, type: 2}
+      level: 2
+      faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
   - missionName: Courier Run
     description: Escort a data courier through hostile turf. If the courier goes down, the contract is void. Survive and they may sign on.
     map:
@@ -162,22 +521,116 @@ MonoBehaviour:
       holeChance: 0.08
       coverChance: 0.06
     objective: 2
+    kind: 0
+    credits: 200
+    loot: []
+    introText: 
+    outroText: 
+    unlocksDistrict: 
+    joinsCrew: []
+    surviveTurns: 6
     objectiveUnitName: Courier
     opponents:
     - unitName: Courier
-      job: {fileID: 11400000, guid: 0e01828e1808a8f44a6f4a75deeba93d, type: 2}
+      job: {fileID: 11400000, guid: 4192de1eb5a6fe3449f6384c93137b24, type: 2}
       level: 1
       faction: 0
       guest: 1
+      modelOverride: {fileID: 100046, guid: f671e87896ed58c4e972db58101c2d27, type: 3}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
     - unitName: Raider
-      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
+      job: {fileID: 11400000, guid: 5be4d25b3f9062c46b5ed2e33fdaf9ba, type: 2}
       level: 2
       faction: 1
-    - unitName: Raider 2
-      job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
-      level: 2
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Slinger
+      job: {fileID: 11400000, guid: 20c942df07d3b7e438d59561829cd467, type: 2}
+      level: 1
       faction: 1
-    - unitName: Raider 3
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Gooner
       job: {fileID: 11400000, guid: e0bd57bb72d55434aa6bb2e57c02cf33, type: 2}
       level: 1
       faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+  - missionName: Data Heist
+    description: Corp security guards a server farm; their netrunner hacks back. Rogue Sec-Drones patrol the floor and attack anyone - you and the corp alike.
+    map:
+      width: 16
+      depth: 12
+      seed: 707
+      maxHeight: 3
+      heightStep: 0.5
+      edgeDepth: 2
+      holeChance: 0.05
+      coverChance: 0.08
+    objective: 0
+    kind: 0
+    credits: 350
+    loot: []
+    introText: 
+    outroText: 
+    unlocksDistrict: 
+    joinsCrew: []
+    surviveTurns: 6
+    objectiveUnitName: 
+    opponents:
+    - unitName: Packet Thief
+      job: {fileID: 11400000, guid: c3dbfd7cb60f4394b9558eb69e889674, type: 2}
+      level: 2
+      faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Trooper A
+      job: {fileID: 11400000, guid: 6329e077b59da82469a37a7c7936787d, type: 2}
+      level: 2
+      faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Trooper B
+      job: {fileID: 11400000, guid: 6329e077b59da82469a37a7c7936787d, type: 2}
+      level: 2
+      faction: 1
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 1
+      hackResistance: 0
+      boss: 0
+    - unitName: Sec-Drone A
+      job: {fileID: 11400000, guid: 08d006b48ff462c4fbf5b8486e06df17, type: 2}
+      level: 1
+      faction: 2
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 0.6
+      hackResistance: 0
+      boss: 0
+    - unitName: Sec-Drone B
+      job: {fileID: 11400000, guid: 08d006b48ff462c4fbf5b8486e06df17, type: 2}
+      level: 1
+      faction: 2
+      guest: 0
+      modelOverride: {fileID: 0}
+      modelScale: 0.6
+      hackResistance: 0
+      boss: 0

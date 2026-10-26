@@ -28,6 +28,22 @@ namespace Tactica.Campaign
         // CampaignState removes it from the roster.
         public bool Flatlined;
 
+        // Started on another side and ended on the Player side - hacked, not a guest. Hacked
+        // recruits join Locked (fixed job, no JP), as GAME_DESIGN.md specifies.
+        public bool Hacked;
+
+        // Progression from this fight, before sharing. Filled by MissionRunner from effective
+        // actions; zero for opponents.
+        public int EarnedJP;
+        public int EarnedXP;
+
+        // Filled by CampaignState.ApplyResult, for the result screen.
+        public int SharedJP;
+        public int LevelsGained;
+
+        // A story guest who stayed with the crew (MissionDefinition.joinsCrew).
+        public bool JoinedCrew;
+
         // The roster entry this unit was spawned from, or null for an opponent.
         public RosterUnit RosterSource;
 
@@ -38,6 +54,13 @@ namespace Tactica.Campaign
     {
         public MissionDefinition Mission;
         public MissionOutcome Outcome;
+
+        // Filled by CampaignState.ApplyResult, for the result screen.
+        public bool WasRoadEncounter;
+        public int CreditsEarned;
+        public List<Tactica.Stats.EquipmentDefinition> LootGained = new List<Tactica.Stats.EquipmentDefinition>();
+        public List<string> JoinedCrew = new List<string>();
+        public string DistrictUnlocked;
         public List<MissionUnitReport> Units = new List<MissionUnitReport>();
     }
 }

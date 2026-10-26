@@ -39,12 +39,25 @@ namespace Tactica.Camera
 #endif
         }
 
-        // Scroll in wheel notches, normalised across backends: the Input System reports raw OS
-        // ticks (120 per notch on Windows), the legacy axis reports ~0.1 per notch.
+        // Scroll in wheel notches, normalised across backends.
+        //
+        // The Input System has two scales, chosen in its settings: UniformAcrossAllPlatforms (the
+        // default since 1.8) already reports about 1 per notch, while the older platform-specific
+        // mode reports raw OS ticks (120 per notch on Windows). Dividing by 120 unconditionally made
+        // zoom 120x too slow under the uniform mode. The legacy axis reports ~0.1 per notch.
         public static float GetScrollNotches()
         {
 #if ENABLE_INPUT_SYSTEM
-            return Mouse.current == null ? 0f : Mouse.current.scroll.ReadValue().y / 120f;
+            if (Mouse.current == null)
+            {
+                return 0f;
+            }
+
+            float scroll = Mouse.current.scroll.ReadValue().y;
+            bool uniform = InputSystem.settings.scrollDeltaBehavior ==
+                           InputSettings.ScrollDeltaBehavior.UniformAcrossAllPlatforms;
+
+            return uniform ? scroll : scroll / 120f;
 #elif ENABLE_LEGACY_INPUT_MANAGER
             return Input.GetAxis("Mouse ScrollWheel") * 10f;
 #else

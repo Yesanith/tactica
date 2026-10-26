@@ -56,7 +56,7 @@ namespace Tactica.UI
                 MenuBuilder.AccentTextColor);
 
             unitsPanel = MenuBuilder.CreateRect(combatBar, "UnitsPanel");
-            unitsPanel.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.8f);
+            NeonTheme.SkinPanel(unitsPanel.gameObject.AddComponent<Image>());
             MenuBuilder.AddVerticalLayout(unitsPanel.gameObject, 4f, 10);
 
             combatBar.gameObject.SetActive(false);
@@ -176,13 +176,13 @@ namespace Tactica.UI
                 {
                     armedUntil = Time.unscaledTime + 3f;
                     label.text = "Leave fight?";
-                    button.image.color = MenuBuilder.DangerColor;
+                    NeonTheme.SetButtonKind(button, NeonTheme.ButtonKind.Danger);
                     return;
                 }
 
                 armedUntil = -1f;
                 label.text = "Jack Out";
-                button.image.color = MenuBuilder.ButtonColor;
+                NeonTheme.SetButtonKind(button, NeonTheme.ButtonKind.Plain);
                 missionRunner.Retreat();
             }, 160f, 44f);
         }

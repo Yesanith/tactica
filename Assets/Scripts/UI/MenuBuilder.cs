@@ -5,29 +5,28 @@ using UnityEngine.UI;
 
 namespace Tactica.UI
 {
-    // Code-built uGUI primitives for the prototype menus: panels, columns, rows, labels, buttons.
+    // Code-built uGUI primitives for the menus: panels, columns, rows, labels, buttons.
     //
     // Same reasoning as UnitStatusBar building its bars in code - nothing authored, so the menus
-    // exist in any scene the campaign flow boots into. Deliberately plain: grey boxes and white
-    // text on black. Styling belongs to a real UI pass, not to this.
+    // exist in any scene the campaign flow boots into. The look comes from NeonTheme; this file
+    // only decides structure.
     public static class MenuBuilder
     {
-        public static readonly Color ButtonColor = new Color(0.22f, 0.22f, 0.24f);
-        public static readonly Color TextColor = Color.white;
-        public static readonly Color DimTextColor = new Color(0.65f, 0.65f, 0.68f);
+        public static readonly Color TextColor = NeonTheme.Text;
+        public static readonly Color DimTextColor = NeonTheme.TextDim;
 
-        // The few colours the prototype uses to carry meaning - not styling. A toggle that is on
-        // (deployed, current job), the button a screen is about, and anything that cannot be
-        // undone. Text accents: section headers, money, story beats, warnings.
-        public static readonly Color SelectedColor = new Color(0.08f, 0.38f, 0.42f);
-        public static readonly Color PrimaryColor = new Color(0.12f, 0.3f, 0.5f);
-        public static readonly Color DangerColor = new Color(0.45f, 0.13f, 0.15f);
-        public static readonly Color AccentTextColor = new Color(0.3f, 0.95f, 0.95f);
-        public static readonly Color CreditsTextColor = new Color(1f, 0.85f, 0.3f);
-        public static readonly Color StoryTextColor = new Color(1f, 0.55f, 0.85f);
-        public static readonly Color WarningTextColor = new Color(1f, 0.8f, 0.35f);
-        public static readonly Color DangerTextColor = new Color(1f, 0.35f, 0.35f);
-        public static readonly Color FaintTextColor = new Color(0.42f, 0.42f, 0.44f);
+        // The few colours that carry meaning. Buttons: a toggle that is on (deployed, current job),
+        // the button a screen is about, and anything that cannot be undone - AddButton turns these
+        // into NeonTheme.ButtonKind. Text accents: section headers, money, story beats, warnings.
+        public static readonly Color SelectedColor = NeonTheme.CyanDeep;
+        public static readonly Color PrimaryColor = new Color(0.04f, 0.17f, 0.24f);
+        public static readonly Color DangerColor = NeonTheme.MagentaDeep;
+        public static readonly Color AccentTextColor = NeonTheme.Cyan;
+        public static readonly Color CreditsTextColor = new Color(1f, 0.87f, 0.3f);
+        public static readonly Color StoryTextColor = NeonTheme.Magenta;
+        public static readonly Color WarningTextColor = NeonTheme.Amber;
+        public static readonly Color DangerTextColor = NeonTheme.Red;
+        public static readonly Color FaintTextColor = NeonTheme.TextFaint;
 
         // The same colours as rich-text tags, for colouring part of a label. Derived from the
         // Colors above so the two can never drift apart.
@@ -81,6 +80,12 @@ namespace Tactica.UI
 
             Image image = rect.gameObject.AddComponent<Image>();
             image.color = color;
+
+            // An opaque screen is a menu backdrop; a translucent one is a dimmer and stays plain.
+            if (color.a >= 1f)
+            {
+                NeonTheme.SkinBackdrop(image);
+            }
 
             return rect;
         }
@@ -176,6 +181,7 @@ namespace Tactica.UI
             label.color = color ?? TextColor;
             label.raycastTarget = false;
             label.textWrappingMode = TextWrappingModes.Normal;
+            NeonTheme.Style(label);
 
             LayoutElement element = rect.gameObject.AddComponent<LayoutElement>();
             element.flexibleWidth = 1f;
@@ -188,14 +194,12 @@ namespace Tactica.UI
             return label;
         }
 
-        public static readonly Color PanelColor = new Color(0.07f, 0.07f, 0.09f);
-
         // A dark box inside a row - a card or a pane. width <= 0 takes the row's slack. Children
         // stack top-down with padding, like a small column.
         public static RectTransform AddPanel(Transform parent, float width, int padding = 16, float spacing = 6f)
         {
             RectTransform rect = CreateRect(parent, "Panel");
-            rect.gameObject.AddComponent<Image>().color = PanelColor;
+            NeonTheme.SkinPanel(rect.gameObject.AddComponent<Image>());
 
             VerticalLayoutGroup layout = rect.gameObject.AddComponent<VerticalLayoutGroup>();
             layout.spacing = spacing;
@@ -237,11 +241,36 @@ namespace Tactica.UI
         public static TextMeshProUGUI AddHeader(Transform parent, string text)
         {
             AddSpacer(parent, 6f);
-            return AddText(parent, text.ToUpperInvariant(), 22f, TextAlignmentOptions.Left, 30f, AccentTextColor);
+            TextMeshProUGUI label = AddText(parent, "// " + text.ToUpperInvariant(), 22f, TextAlignmentOptions.Left, 30f, AccentTextColor);
+            NeonTheme.Style(label, NeonTheme.TextRole.Display);
+            return label;
+        }
+
+        // A screen's title: big, bold, tracked out, in the accent colour. No halo - TMP's underlay
+        // and glow need a wider SDF padding than the runtime fonts have, and came out as boxes.
+        public static TextMeshProUGUI AddTitle(Transform parent, string text, float fontSize = 56f, float height = 72f)
+        {
+            TextMeshProUGUI label = AddText(parent, text.ToUpperInvariant(), fontSize, TextAlignmentOptions.Center, height, AccentTextColor);
+            NeonTheme.Style(label, NeonTheme.TextRole.Display);
+            label.fontStyle |= FontStyles.Bold;
+            return label;
+        }
+
+        public static NeonTheme.ButtonKind KindFor(Color? color)
+        {
+            if (!color.HasValue)
+            {
+                return NeonTheme.ButtonKind.Plain;
+            }
+
+            return color.Value == SelectedColor ? NeonTheme.ButtonKind.Selected
+                : color.Value == PrimaryColor ? NeonTheme.ButtonKind.Primary
+                : color.Value == DangerColor ? NeonTheme.ButtonKind.Danger
+                : NeonTheme.ButtonKind.Plain;
         }
 
         // width <= 0 lets the button stretch with its layout instead of taking a fixed width.
-        // color: null is the plain grey; pass SelectedColor, PrimaryColor or DangerColor to say
+        // color: null is a plain button; pass SelectedColor, PrimaryColor or DangerColor to say
         // what kind of button it is.
         public static Button AddButton(
             Transform parent,
@@ -255,20 +284,10 @@ namespace Tactica.UI
             RectTransform rect = CreateRect(parent, $"Button_{label}");
 
             Image image = rect.gameObject.AddComponent<Image>();
-            image.color = color ?? ButtonColor;
 
             Button button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = image;
             button.interactable = interactable;
-
-            // A coloured button keeps its colour when disabled - a current job or a learned
-            // ability is "on and nothing to click", not greyed out. The dim label says the rest.
-            if (color.HasValue)
-            {
-                ColorBlock colors = button.colors;
-                colors.disabledColor = Color.white;
-                button.colors = colors;
-            }
 
             if (onClick != null)
             {
@@ -301,6 +320,10 @@ namespace Tactica.UI
             text.textWrappingMode = TextWrappingModes.NoWrap;
             text.overflowMode = TextOverflowModes.Ellipsis;
 
+            // A coloured button keeps its colour when disabled - a current job or a learned
+            // ability is "on and nothing to click", not greyed out. The dim label says the rest.
+            NeonTheme.SkinButton(button, KindFor(color));
+
             return button;
         }
 
@@ -310,14 +333,19 @@ namespace Tactica.UI
             SetHeight(rect.gameObject, height);
         }
 
-        // Removes every child. Deactivated first because Destroy is deferred to the end of the
-        // frame, and a layout group would otherwise still lay out the dying children alongside
-        // the replacements for that frame.
+        // Removes every child but the theme's own (a panel's edge, a backdrop's grid). Deactivated
+        // first because Destroy is deferred to the end of the frame, and a layout group would
+        // otherwise still lay out the dying children alongside the replacements for that frame.
         public static void Clear(Transform parent)
         {
             for (int i = parent.childCount - 1; i >= 0; i--)
             {
                 GameObject child = parent.GetChild(i).gameObject;
+
+                if (child.name == "Edge" || child.name == "Grid")
+                {
+                    continue;
+                }
                 child.SetActive(false);
                 Object.Destroy(child);
             }

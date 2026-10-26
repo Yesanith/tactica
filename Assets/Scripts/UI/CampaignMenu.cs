@@ -199,7 +199,8 @@ namespace Tactica.UI
         private void ShowMainMenu()
         {
             BeginScreen("TACTICA", null, showStatus: false);
-            MenuBuilder.AddText(column, "NEON DISTRICT OPERATIONS  //  prototype", 24f, color: MenuBuilder.DimTextColor);
+            TMPro.TextMeshProUGUI tagline = MenuBuilder.AddText(column, "NEON DISTRICT OPERATIONS  //  PROTOTYPE", 24f, color: MenuBuilder.StoryTextColor);
+            NeonTheme.Style(tagline, NeonTheme.TextRole.Display);
             MenuBuilder.AddSpacer(column, 24f);
 
             if (CampaignState.HasSave)
@@ -433,7 +434,7 @@ namespace Tactica.UI
             armedConfirm = nextConfirm;
             nextConfirm = null;
 
-            MenuBuilder.AddText(column, title, 56f, height: 72f);
+            MenuBuilder.AddTitle(column, title);
 
             if (showStatus && campaign != null)
             {

@@ -338,7 +338,7 @@ namespace Tactica.UI
 
         private static string DangerPips(int danger)
         {
-            return new string('#', danger) + new string('-', Mathf.Max(0, 5 - danger));
+            return new string('\u25A0', danger) + new string('\u25A1', Mathf.Max(0, 5 - danger));
         }
 
         private static string EntryName(UnitEntry entry)

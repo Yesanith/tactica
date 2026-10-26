@@ -29,7 +29,7 @@ namespace Tactica.UI
             deployPanel.pivot = new Vector2(1f, 1f);
             deployPanel.anchoredPosition = new Vector2(-16f, -16f);
             deployPanel.sizeDelta = new Vector2(480f, 0f);
-            deployPanel.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.85f);
+            NeonTheme.SkinPanel(deployPanel.gameObject.AddComponent<Image>());
             MenuBuilder.AddVerticalLayout(deployPanel.gameObject, 6f, 14);
             deployPanel.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             deployPanel.gameObject.SetActive(false);

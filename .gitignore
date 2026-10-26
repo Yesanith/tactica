@@ -157,3 +157,9 @@ secrets.json
 /[Aa]ssets/Plugins/NuGet/
 /[Aa]ssets/Plugins/NuGet.meta
 /[Aa]ssets/Plugins.meta
+
+# Adam Character Pack: Asset Store "Restricted Asset" (personal, non-commercial; no
+# redistribution) and ~1 GB. Re-import it from the Asset Store; units fall back to capsules
+# when it is missing.
+/[Aa]ssets/UnityTechnologies/
+/[Aa]ssets/UnityTechnologies.meta

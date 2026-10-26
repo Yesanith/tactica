@@ -16,7 +16,7 @@ namespace Tactica.Combat
     // whoever reaches TurnThreshold acts, then pays for what it did. Speed therefore decides how
     // OFTEN a unit acts, not merely who goes first, and holding back is a real choice: a unit that
     // only moved, or only waited, comes round again sooner.
-    public class CombatManager : MonoBehaviour
+    public partial class CombatManager : MonoBehaviour
     {
         [Tooltip("Units in this encounter. Replaced by StartCombat(units) when a mission spawns " +
                  "its own; the Inspector list is for hand-built test scenes.")]
@@ -91,6 +91,64 @@ namespace Tactica.Combat
         // whether it is legal and what it does.
         public ActionResolver Resolver { get; } = new ActionResolver();
 
+        [Tooltip("Board the resolver reads unit positions and heights from. Defaults to the first " +
+                 "GridManager in the scene.")]
+        [SerializeField] private GridManager gridManagerRef;
+
+        // Gives the resolver its two board lookups - who stands where, and how high - so area
+        // abilities and height-adjusted range work, while the resolver itself stays scene-free.
+        private void Awake()
+        {
+            if (gridManagerRef == null)
+            {
+                gridManagerRef = FindAnyObjectByType<GridManager>();
+            }
+
+            if (gridManagerRef != null)
+            {
+                GridManager grid = gridManagerRef;
+
+                Resolver.UnitAt = coords =>
+                    grid.TryGetTile(coords, out GridTile tile) && tile.Occupant != null
+                        ? tile.Occupant.GetComponent<GridUnit>()
+                        : null;
+
+                Resolver.HeightAt = coords =>
+                    grid.TryGetTile(coords, out GridTile tile) ? tile.Height : (int?)null;
+            }
+
+            Resolver.OnActionResolved += HandleActionResolved;
+            Resolver.OnChargeStarted += HandleChargeStarted;
+
+            if (gridManagerRef != null)
+            {
+                gridManagerRef.UnitMoved += HandleUnitMoved;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            Resolver.OnActionResolved -= HandleActionResolved;
+            Resolver.OnChargeStarted -= HandleChargeStarted;
+
+            if (gridManagerRef != null)
+            {
+                gridManagerRef.UnitMoved -= HandleUnitMoved;
+            }
+        }
+
+        // A freshly hacked unit starts its new allegiance with an empty CT gauge - GAME_DESIGN.md's
+        // brake, so a hack cannot hand the hacker an immediate extra turn from the target's charge.
+        private void HandleActionResolved(ActionOutcome outcome)
+        {
+            if (outcome.Effective && outcome.Ability != null
+                && outcome.Ability.EffectType == AbilityEffectType.Override
+                && outcome.Target != null && chargeTime.ContainsKey(outcome.Target))
+            {
+                chargeTime[outcome.Target] = 0;
+            }
+        }
+
         // Builds initiative and hands the first unit its turn.
         //
         // Safe to call from another script's Start: GridUnit computes EffectiveStats in Awake,
@@ -124,6 +182,7 @@ namespace Tactica.Combat
             activeUnit = null;
             TurnNumber = 0;
             ClockTick = 0;
+            ClearCharges();
 
             Debug.Log($"Combat start. Roster: {DescribeOrder()}", this);
 
@@ -149,6 +208,7 @@ namespace Tactica.Combat
             }
 
             CurrentState = CombatState.CombatEnd;
+            ClearCharges();
 
             Debug.Log($"=== COMBAT ABORTED (turn {TurnNumber}) ===", this);
 
@@ -241,7 +301,13 @@ namespace Tactica.Combat
                         return;
                     }
 
-                    Tick();
+                    // A charge that went off may have ended the fight. Asked of the tick itself: the
+                    // state reads CombatEnd until the first turn is handed out, so it cannot tell.
+                    if (Tick())
+                    {
+                        return;
+                    }
+
                     continue;
                 }
 
@@ -260,6 +326,36 @@ namespace Tactica.Combat
                         Debug.Log($"{ready.DisplayName} is down - flatline in {ready.FlatlineCounter}.", ready);
                     }
 
+                    continue;
+                }
+
+                // Statuses tick at the start of each of the unit's turns - damage and healing over
+                // time land, durations count down. A tick can knock the unit out, end the fight, or
+                // leave it stunned; each of those means no turn is handed over.
+                string statusLog = ready.TickStatuses();
+
+                if (statusLog != null)
+                {
+                    Debug.Log(statusLog, ready);
+                    Resolver.NotifyStatsChanged();
+                }
+
+                if (ready.IsKnockedOut)
+                {
+                    PayForTurn(ready, CostNeither);
+
+                    if (TryEndCombatNow())
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
+                if (ready.IsStunned)
+                {
+                    Debug.Log($"{ready.DisplayName} is stunned and loses the turn.", ready);
+                    PayForTurn(ready, CostNeither);
                     continue;
                 }
 
@@ -282,7 +378,8 @@ namespace Tactica.Combat
         // One clock tick: every unit still on the board gains its Speed in CT. Per-tick effects
         // (poison, regeneration, status countdowns) belong here, so they run on the same clock as
         // turns rather than per turn - which would make them last longer for slow units.
-        private void Tick()
+        // Returns true if a charge that went off this tick ended the encounter.
+        private bool Tick()
         {
             ClockTick++;
 
@@ -295,6 +392,8 @@ namespace Tactica.Combat
 
                 chargeTime[unit] = GetChargeTime(unit) + Mathf.Max(0, unit.EffectiveStats.Speed);
             }
+
+            return TickCharges();
         }
 
         // Highest CT at or over the threshold wins; ties go to roster order (Speed, then authored
@@ -419,6 +518,7 @@ namespace Tactica.Combat
             }
 
             CurrentState = CombatState.CombatEnd;
+            ClearCharges();
 
             Debug.Log($"=== COMBAT OVER: {result} (turn {TurnNumber}) ===", this);
 

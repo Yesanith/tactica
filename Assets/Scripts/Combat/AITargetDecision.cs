@@ -36,6 +36,17 @@ namespace Tactica.Combat
         // already the best option - the executor compares the two rather than carrying a flag.
         public readonly Vector2Int DestinationTile;
 
+        // Where the ability is aimed. The target's tile for single-target abilities; for an area
+        // ability, the blast centre the evaluation chose.
+        public readonly Vector2Int Center;
+
+        // The evaluation's score for the chosen action, for the decision log. 0 for approach moves.
+        public readonly float Score;
+
+        // A wounded unit pulling back instead of acting: move to DestinationTile, do nothing else.
+        // Target is the nearest threat, kept for the log.
+        public readonly bool Retreat;
+
         public bool HasTarget => Target != null;
 
         public AITargetDecision(
@@ -44,14 +55,20 @@ namespace Tactica.Combat
             bool canActThisTurn,
             int distanceFromBestStandingTile,
             int reachableTargetCount,
-            Vector2Int destinationTile)
+            Vector2Int destinationTile,
+            Vector2Int? center = null,
+            float score = 0f,
+            bool retreat = false)
         {
+            Retreat = retreat;
             Target = target;
             Ability = ability;
             CanActThisTurn = canActThisTurn;
             DistanceFromBestStandingTile = distanceFromBestStandingTile;
             ReachableTargetCount = reachableTargetCount;
             DestinationTile = destinationTile;
+            Center = center ?? (target != null ? target.GridCoords : destinationTile);
+            Score = score;
         }
     }
 }

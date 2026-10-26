@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Serialization;
 using Tactica.Stats;
@@ -12,7 +13,7 @@ namespace Tactica.Grid
     // Knows nothing about how it is displayed. It announces Spawned and StatsChanged, and the UI
     // layer attaches and drives the bars from those - see UnitStatusBar. That is what keeps Grid
     // free of any Tactica.UI reference.
-    public class GridUnit : MonoBehaviour
+    public partial class GridUnit : MonoBehaviour
     {
         [Tooltip("Shown in the HUD. Leave empty to fall back to the job name.")]
         [SerializeField] private string displayName;
@@ -64,6 +65,9 @@ namespace Tactica.Grid
         [SerializeField] private float pivotHeight = 1.0f;
 
         public Vector2Int GridCoords => gridCoords;
+
+        // For visuals that pose the body about its feet (the KO fall).
+        public float PivotHeight => pivotHeight;
 
         // Raised at the very start of every unit's Awake, before its stats exist. The hook the UI
         // uses to attach a status bar to any unit - authored or spawned - without Grid naming the
@@ -241,8 +245,7 @@ namespace Tactica.Grid
                 RecalculateStats();
 
                 // Logged after the recalculation so the number is read back rather than predicted.
-                // TODO: a HUD status icon. Until one exists the console is the only way to see
-                // that the stance is active, which makes it easy to mistake for a broken bonus.
+                // On screen the stance shows as BRACED in the status bar (DescribeStatuses).
                 Debug.Log($"{DisplayName} leaves defensive stance (Defense back to {EffectiveStats.Defense}).", this);
             }
         }
@@ -412,6 +415,28 @@ namespace Tactica.Grid
                 EffectiveStats += new CharacterStats { Defense = defenseBonus };
             }
 
+            if (Weapon != null)
+            {
+                EffectiveStats += Weapon.StatBonus;
+            }
+
+            // Support and Movement passives are permanent modifiers (Attack Up, Move +1). Reaction
+            // abilities fire on hits and add nothing here.
+            if (Support != null)
+            {
+                EffectiveStats += Support.StatModifier;
+            }
+
+            if (Movement != null)
+            {
+                EffectiveStats += Movement.StatModifier;
+            }
+
+            foreach (ActiveStatus status in statuses)
+            {
+                EffectiveStats += status.Ability.StatModifier;
+            }
+
             if (!statsInitialised)
             {
                 CurrentStats = CurrentStats.FullFrom(EffectiveStats);
@@ -486,6 +511,20 @@ namespace Tactica.Grid
 
             CurrentStats.HP = Mathf.Min(EffectiveStats.MaxHP, CurrentStats.HP + amount);
             NotifyStatsChanged();
+        }
+
+        // Distance from the pivot down to the feet. 1 for the placeholder capsule (centred pivot),
+        // 0 for a character model whose pivot is already at its feet. Usually set while the unit is
+        // still inactive, before Awake has found the grid - then the first snap applies it; on a
+        // unit already on the board it re-snaps at once.
+        public void SetPivotHeight(float height)
+        {
+            pivotHeight = Mathf.Max(0f, height);
+
+            if (gridManagerRef != null)
+            {
+                SnapToGridPosition();
+            }
         }
 
         // Places this unit on top of the tile at GridCoords.

@@ -16,5 +16,13 @@ namespace Tactica.Grid
         // Tiles holding a unit the current ability may legally hit. Independent of InMoveRange:
         // a tile can be both reachable and attackable, and each system sets only its own bit.
         Attackable = 1 << 2,
+
+        // The pre-fight deployment zone: where a crew member may be placed. Its own layer and
+        // colour, so "you may start here" never reads as a move range.
+        Deployable = 1 << 3,
+
+        // Where a charged ability will go off. Stays lit until it fires, so everyone can see the
+        // danger coming and step out of it.
+        Charging = 1 << 4,
     }
 }

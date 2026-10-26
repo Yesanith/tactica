@@ -15,5 +15,9 @@ namespace Tactica.Combat
         // An ability was chosen. Clicking an Attackable tile resolves it; clicking anything else
         // cancels.
         Targeting,
+
+        // Wait was pressed: clicking a lit neighbouring tile turns the unit to face it and ends the
+        // turn; pressing Wait again ends it facing as it is. FFT's end-of-turn facing choice.
+        ChoosingFacing,
     }
 }

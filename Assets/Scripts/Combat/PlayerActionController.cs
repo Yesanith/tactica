@@ -157,12 +157,12 @@ namespace Tactica.Combat
         {
             GridUnit unit = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
 
-            if (unit == null || !unit.IsPlayerControlled || unit.CurrentJob == null)
+            if (unit == null || !unit.IsPlayerControlled)
             {
                 return new List<AbilityDefinition>();
             }
 
-            return unit.CurrentJob.GetUnlockedAbilities(unit.Level);
+            return unit.GetActionAbilities();
         }
 
         // Act: light every tile holding a legal target for the chosen ability, and wait for a click.
@@ -184,12 +184,9 @@ namespace Tactica.Combat
                 return false;
             }
 
-            if (unit.CurrentStats.MP < ability.MPCost)
+            if (!combatManagerRef.Resolver.CanUse(unit, ability, out string reason))
             {
-                Debug.Log(
-                    $"{nameof(PlayerActionController)}: {unit.DisplayName} lacks MP for {ability.AbilityName} " +
-                    $"({unit.CurrentStats.MP}/{ability.MPCost}).",
-                    this);
+                Debug.Log($"{nameof(PlayerActionController)}: {unit.DisplayName} cannot use {ability.AbilityName}: {reason}", this);
                 return false;
             }
 
@@ -230,22 +227,44 @@ namespace Tactica.Combat
             }
 
             GridUnit user = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
-            GridUnit target = GetUnitAt(coords);
 
-            if (user == null || target == null)
+            if (user == null)
             {
                 return null;
             }
 
-            return combatManagerRef.Resolver.DescribeOutcome(user, target, pendingAbility);
+            string outcome = combatManagerRef.Resolver.DescribeOutcome(user, coords, pendingAbility);
+
+            // A charged ability lands later, on whoever is standing there then.
+            return pendingAbility.ChargeTime > 0
+                ? $"[charges {pendingAbility.ChargeTime} ticks] {outcome}"
+                : outcome;
         }
 
-        // Wait: end the turn, taking a defensive stance if the unit held its attack.
+        // Wait: first press lights the four neighbouring tiles to choose a facing (FFT's end-of-turn
+        // choice); a click on one turns the unit and ends the turn, a second Wait ends it as it
+        // faces. Either way the turn ends with a defensive stance if the unit held its action.
         //
-        // The condition is deliberately "did not attack" rather than "did nothing at all" - moving
+        // The condition is deliberately "did not act" rather than "did nothing at all" - moving
         // into cover and bracing is the tactical choice this is meant to reward, and requiring the
         // unit to stand still as well would make Wait strictly worse than not moving.
         public void Wait()
+        {
+            GridUnit actor = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
+
+            if (actor != null && actor.IsPlayerControlled && Mode != PlayerActionMode.ChoosingFacing
+                && combatManagerRef.CurrentState == CombatState.WaitingForInput)
+            {
+                BeginFacingChoice(actor);
+                return;
+            }
+
+            ConfirmWait();
+        }
+
+        // Ends the turn now, without a facing prompt. What the facing click and the second Wait
+        // both arrive at.
+        public void ConfirmWait()
         {
             GridUnit unit = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
 
@@ -289,7 +308,8 @@ namespace Tactica.Combat
         // decided here.
         public void HandleTileClicked(Vector2Int coords)
         {
-            if (gridManagerRef == null)
+            // No fight yet (deployment) or none any more: board clicks belong to someone else.
+            if (gridManagerRef == null || combatManagerRef == null || combatManagerRef.CurrentState == CombatState.CombatEnd)
             {
                 return;
             }
@@ -303,6 +323,12 @@ namespace Tactica.Combat
             if (Mode == PlayerActionMode.Moving)
             {
                 TryMove(coords);
+                return;
+            }
+
+            if (Mode == PlayerActionMode.ChoosingFacing)
+            {
+                ChooseFacing(coords);
                 return;
             }
 
@@ -349,7 +375,51 @@ namespace Tactica.Combat
                 // Back to neutral, but the turn is NOT over - move then attack is the whole point.
                 // Only movement is spent; Attack remains available.
                 Mode = PlayerActionMode.None;
+
+                // Unless Overwatch dropped the unit on arrival: a knocked-out unit's turn is over.
+                if (unit.IsKnockedOut && combatManagerRef.CurrentState != CombatState.CombatEnd)
+                {
+                    EndTurn();
+                }
             }
+        }
+
+        private void BeginFacingChoice(GridUnit unit)
+        {
+            CancelTargeting();
+            gridManagerRef.ClearMoveRangeHighlight();
+
+            List<Vector2Int> around = new List<Vector2Int>();
+
+            foreach (Vector2Int direction in new[] { Vector2Int.up, Vector2Int.right, Vector2Int.down, Vector2Int.left })
+            {
+                Vector2Int coords = unit.GridCoords + direction;
+
+                if (gridManagerRef.HasTile(coords))
+                {
+                    around.Add(coords);
+                }
+            }
+
+            gridManagerRef.ShowAttackableTiles(around);
+            Mode = PlayerActionMode.ChoosingFacing;
+            Debug.Log($"{nameof(PlayerActionController)}: click a lit tile to face it, or Wait again to keep facing {unit.CurrentFacing}.", this);
+        }
+
+        private void ChooseFacing(Vector2Int coords)
+        {
+            GridUnit unit = combatManagerRef.GetActiveUnit();
+
+            if (unit != null && (gridManagerRef.GetTileHighlightState(coords) & TileHighlightState.Attackable) != 0)
+            {
+                unit.FaceTowards(coords);
+                ConfirmWait();
+                return;
+            }
+
+            // Anything else backs out to the turn, like cancelling targeting.
+            CancelTargeting();
+            Mode = PlayerActionMode.None;
         }
 
         private void ResolveTargetClick(Vector2Int coords)
@@ -368,7 +438,16 @@ namespace Tactica.Combat
             }
 
             GridUnit user = GetActionableUnit();
+
+            // The unit on the clicked tile, or - for an area ability aimed at empty ground - the
+            // first unit in the blast, so the target panel still has someone to show.
             GridUnit target = GetUnitAt(coords);
+
+            if (target == null && user != null && pendingAbility != null)
+            {
+                List<GridUnit> affected = combatManagerRef.Resolver.GetAffectedUnits(user, coords, pendingAbility);
+                target = affected.Count > 0 ? affected[0] : null;
+            }
 
             if (user == null || target == null || pendingAbility == null)
             {
@@ -386,7 +465,7 @@ namespace Tactica.Combat
 
             // TryExecuteAbility raises OnStatsChanged itself on success, which is what refreshes
             // the HUD panels and unit bars - nothing extra to raise here.
-            bool success = combatManagerRef.Resolver.TryExecuteAbility(user, target, pendingAbility, out string message);
+            bool success = combatManagerRef.Resolver.TryExecuteAt(user, coords, pendingAbility, out string message);
 
             // Only on success, mirroring MarkMoved: a rejected ability costs nothing, so it must
             // not forfeit the defensive stance Wait would otherwise grant.
@@ -430,25 +509,41 @@ namespace Tactica.Combat
         {
             List<Vector2Int> targets = new List<Vector2Int>();
 
+            ActionResolver resolver = combatManagerRef.Resolver;
+            bool area = resolver.GetArea(user, ability) > 0;
+
             foreach (KeyValuePair<Vector2Int, GridTile> entry in gridManagerRef.GridTiles)
             {
-                if (GridManager.GetGridDistance(user.GridCoords, entry.Key) > ability.Range)
+                // Range includes the height bonus or penalty toward this very tile.
+                if (!resolver.IsInRange(user, entry.Key, ability))
                 {
                     continue;
                 }
 
-                GridUnit occupant = GetUnitAt(entry.Key);
-
-                // Knocked-out occupants are left to IsValidTarget: they are illegal for everything
-                // except Revive, and only the resolver knows which ability is which.
-                if (occupant == null)
+                if (!area)
                 {
+                    // Knocked-out occupants are left to IsValidTarget: they are illegal for
+                    // everything except Revive, and only the resolver knows which ability is which.
+                    GridUnit occupant = GetUnitAt(entry.Key);
+
+                    if (occupant != null && resolver.IsValidTarget(user, occupant, ability))
+                    {
+                        targets.Add(entry.Key);
+                    }
+
                     continue;
                 }
 
-                if (combatManagerRef.Resolver.IsValidTarget(user, occupant, ability))
+                // An area ability can be aimed at any tile - empty ground included - whose blast
+                // would touch at least one unit it is meant for. A blast that would only catch
+                // allies is not offered, though one that catches allies too still is.
+                foreach (GridUnit unit in resolver.GetAffectedUnits(user, entry.Key, ability))
                 {
-                    targets.Add(entry.Key);
+                    if (resolver.IsValidTarget(user, unit, ability))
+                    {
+                        targets.Add(entry.Key);
+                        break;
+                    }
                 }
             }
 
@@ -494,6 +589,26 @@ namespace Tactica.Combat
             }
 
             return unit;
+        }
+
+        // Backs out of whatever command is half-done - a move range on show, a target being
+        // picked, the facing prompt - without spending anything. The HUD's Escape / right click.
+        public void CancelCommand()
+        {
+            if (Mode == PlayerActionMode.None && pendingAbility == null)
+            {
+                return;
+            }
+
+            CancelTargeting();
+
+            if (gridManagerRef != null)
+            {
+                gridManagerRef.ClearMoveRangeHighlight();
+            }
+
+            Mode = PlayerActionMode.None;
+            OnTargetSelected?.Invoke(null);
         }
 
         private void CancelTargeting()

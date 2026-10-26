@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Tactica.Grid;
 using Tactica.Stats;
@@ -27,7 +28,7 @@ namespace Tactica.Combat
     // frame, with the state machine re-entering itself at every level. Yielding first means each
     // turn is dispatched and finished on its own frame, and the stack unwinds between units.
     // Readability is the bonus; not re-entering the turn system is the reason.
-    public class EnemyAIController : MonoBehaviour
+    public partial class EnemyAIController : MonoBehaviour
     {
         [Tooltip("Grid the AI reasons over. Defaults to the first GridManager in the scene.")]
         [SerializeField] private GridManager gridManagerRef;
@@ -160,7 +161,7 @@ namespace Tactica.Combat
 
                 // Re-tested rather than trusting decision.CanActThisTurn: that was computed for the
                 // destination, and the move above may have been refused.
-                if (StillActing(aiUnit) && !aiUnit.IsKnockedOut && TryAttack(aiUnit, decision))
+                if (!decision.Retreat && StillActing(aiUnit) && !aiUnit.IsKnockedOut && TryAttack(aiUnit, decision))
                 {
                     // The attack ended the encounter. There is no next turn to pass to, and
                     // EndCurrentTurn would only log that combat is already over.
@@ -188,16 +189,16 @@ namespace Tactica.Combat
             // Range is checked inside TryExecuteAbility, which rejects with a message rather than
             // throwing - so an out-of-range attempt after a failed move reports itself instead of
             // needing a second range test here.
-            if (!combatManagerRef.Resolver.IsTargetInRange(aiUnit, target, decision.Ability))
+            if (!combatManagerRef.Resolver.IsInRange(aiUnit, decision.Center, decision.Ability))
             {
                 Debug.Log(
-                    $"AI: {aiUnit.DisplayName} is not in range of {target.DisplayName} after moving - holding.",
+                    $"AI: {aiUnit.DisplayName} is not in range of {decision.Center} after moving - holding.",
                     aiUnit);
                 return false;
             }
 
-            bool success = combatManagerRef.Resolver.TryExecuteAbility(
-                aiUnit, target, decision.Ability, out string message);
+            bool success = combatManagerRef.Resolver.TryExecuteAt(
+                aiUnit, decision.Center, decision.Ability, out string message);
 
             // Mirrors ResolveTargetClick: only a landed ability counts as having acted, and the
             // same OK/REJECTED shape so AI and player actions read identically in the console.
@@ -258,19 +259,220 @@ namespace Tactica.Combat
                 return default;
             }
 
-            AbilityDefinition reboot = FindAffordable(aiUnit, AbilityEffectType.Revive);
+            AITargetDecision best = EvaluateActions(aiUnit);
 
-            if (reboot != null)
+            // Badly hurt and nothing worth the risk (no kill, no heal): pull back toward friends.
+            if (aiUnit.CurrentStats.HP < aiUnit.EffectiveStats.MaxHP * RetreatHealthFraction
+                && (!best.HasTarget || best.Score < RetreatUnlessScore))
             {
-                AITargetDecision rebootDecision = FindBestTarget(aiUnit, reboot);
+                AITargetDecision retreat = FindRetreat(aiUnit);
 
-                if (rebootDecision.HasTarget && rebootDecision.CanActThisTurn)
+                if (retreat.HasTarget)
                 {
-                    return rebootDecision;
+                    return retreat;
                 }
             }
 
+            if (best.HasTarget)
+            {
+                return best;
+            }
+
+            // Nothing worth doing from anywhere it can stand this turn: walk toward the nearest
+            // enemy with its main attack, as before.
             return FindBestTarget(aiUnit, SelectAbility(aiUnit));
+        }
+
+        // ---------------------------------------------------------------------
+        // Action evaluation (Phase 13): every usable ability x every target it could reach this
+        // turn, scored. Replaces "lowest HP wins" - it weighs what an action actually does: damage
+        // times hit chance, a kill it can secure, the target's role, friendly fire, heals where
+        // they matter, buffs not already running, stuns and debuffs on enemies.
+        // ---------------------------------------------------------------------
+
+        // Score weights. Rough by design - they only have to rank sensible choices above silly ones.
+        private const float KillBonus = 12f;
+        private const float FriendlyFirePenalty = 2f;
+        private const float HealThreshold = 0.6f;
+        private const float ReviveValue = 30f;
+        private const float BuffValue = 5f;
+        private const float DebuffValue = 6f;
+        private const float StunValue = 14f;
+        private const float DotValue = 8f;
+        private const float HackValue = 25f;
+        private const float TravelCost = 0.5f;
+
+        // A charged ability may miss its mark - the target can walk out before it fires.
+        private const float ChargedValue = 0.6f;
+
+        // Below this share of max HP, a unit with nothing better to do falls back...
+        private const float RetreatHealthFraction = 0.3f;
+
+        // ...unless its best action scores at least this - a kill or a real heal.
+        private const float RetreatUnlessScore = 12f;
+
+        private const float OverwatchValue = 3f;
+
+        private AITargetDecision EvaluateActions(GridUnit aiUnit)
+        {
+            ActionResolver resolver = combatManagerRef.Resolver;
+            List<Vector2Int> standingTiles = StandingTiles(aiUnit);
+            IReadOnlyList<GridUnit> roster = combatManagerRef.TurnOrder;
+
+            // A taunted unit must hit its taunter if any harmful ability can reach it this turn.
+            GridUnit taunter = aiUnit.Taunter;
+            bool tauntLocked = false;
+
+            List<AbilityDefinition> usable = aiUnit.GetActionAbilities()
+                .Where(ability => resolver.CanUse(aiUnit, ability, out _))
+                .ToList();
+
+            if (taunter != null)
+            {
+                tauntLocked = usable.Any(ability => ability.IsHarmful
+                    && resolver.IsValidTarget(aiUnit, taunter, ability)
+                    && FirstStandingTileFor(aiUnit, standingTiles, taunter.GridCoords, ability).HasValue);
+            }
+
+            AITargetDecision best = default;
+            float bestScore = 0f;
+            int reachable = 0;
+
+            foreach (AbilityDefinition ability in usable)
+            {
+                for (int i = 0; i < roster.Count; i++)
+                {
+                    GridUnit candidate = roster[i];
+
+                    if (candidate == null || candidate.IsFlatlined || !resolver.IsValidTarget(aiUnit, candidate, ability))
+                    {
+                        continue;
+                    }
+
+                    if (tauntLocked && ability.IsHarmful && candidate != taunter)
+                    {
+                        continue;
+                    }
+
+                    Vector2Int? from = FirstStandingTileFor(aiUnit, standingTiles, candidate.GridCoords, ability);
+
+                    if (!from.HasValue)
+                    {
+                        continue;
+                    }
+
+                    reachable++;
+
+                    int travel = GridManager.GetGridDistance(aiUnit.GridCoords, from.Value);
+                    float charged = ability.ChargeTime > 0 ? ChargedValue : 1f;
+                    float score = ScoreAction(aiUnit, ability, candidate.GridCoords) * charged - travel * TravelCost;
+
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        best = new AITargetDecision(candidate, ability, true, 0, 0, from.Value, candidate.GridCoords, score);
+                    }
+                }
+            }
+
+            return best.HasTarget
+                ? new AITargetDecision(best.Target, best.Ability, true, 0, reachable, best.DestinationTile, best.Center, best.Score)
+                : default;
+        }
+
+        // What aiming this ability at `center` is worth, summed over everyone it would touch.
+        private float ScoreAction(GridUnit aiUnit, AbilityDefinition ability, Vector2Int center)
+        {
+            ActionResolver resolver = combatManagerRef.Resolver;
+            float score = 0f;
+
+            foreach (GridUnit target in resolver.GetAffectedUnits(aiUnit, center, ability))
+            {
+                bool ally = target.CurrentFaction == aiUnit.CurrentFaction;
+                float hit = resolver.GetHitChance(aiUnit, target, ability) / 100f;
+                int hp = target.CurrentStats.HP;
+                int maxHP = Mathf.Max(1, target.EffectiveStats.MaxHP);
+
+                switch (ability.EffectType)
+                {
+                    case AbilityEffectType.Damage:
+                    {
+                        int damage = resolver.CalculateDamage(aiUnit, target, ability);
+                        float expected = Mathf.Min(damage, hp) * hit;
+
+                        score += ally
+                            ? -expected * FriendlyFirePenalty
+                            : expected + (damage >= hp ? KillBonus * hit : 0f) + RoleBonus(target) * hit;
+                        break;
+                    }
+
+                    case AbilityEffectType.Heal:
+                        if (ally && (float)hp / maxHP < HealThreshold)
+                        {
+                            score += Mathf.Min(resolver.GetPower(aiUnit, ability), maxHP - hp) * 1.2f;
+                        }
+                        break;
+
+                    case AbilityEffectType.Revive:
+                        score += ally ? ReviveValue : 0f;
+                        break;
+
+                    case AbilityEffectType.Override:
+                        score += ally ? 0f : resolver.GetOverrideChance(aiUnit, target, ability) / 100f * HackValue;
+                        break;
+
+                    case AbilityEffectType.Buff:
+                        score += ally && !target.HasStatusFrom(ability) ? BuffValue : 0f;
+                        break;
+
+                    default:
+                    {
+                        if (target.HasStatusFrom(ability))
+                        {
+                            break;
+                        }
+
+                        if (ability.StatusKind == StatusKind.Overwatch)
+                        {
+                            score += ally ? OverwatchValue : 0f;
+                            break;
+                        }
+
+                        float value = ability.StatusKind == StatusKind.Stun ? StunValue
+                            : ability.StatusKind == StatusKind.DamageOverTime ? DotValue
+                            : ability.StatusKind == StatusKind.HealOverTime ? (ally && (float)hp / maxHP < 0.8f ? BuffValue : 0f)
+                            : ability.StatusKind == StatusKind.Taunt ? (ally ? 0f : BuffValue)
+                            : DebuffValue;
+
+                        bool helpful = ability.StatusKind == StatusKind.HealOverTime;
+                        score += helpful ? value : (ally ? -value : value * hit);
+                        break;
+                    }
+                }
+            }
+
+            return score;
+        }
+
+        // Medics and hackers first: a unit that heals, reboots, hacks or stuns is worth more dead
+        // than its HP suggests.
+        private static float RoleBonus(GridUnit target)
+        {
+            float bonus = 0f;
+
+            foreach (AbilityDefinition ability in target.GetActionAbilities())
+            {
+                if (ability.EffectType == AbilityEffectType.Heal || ability.EffectType == AbilityEffectType.Revive)
+                {
+                    bonus = Mathf.Max(bonus, 6f);
+                }
+                else if (ability.EffectType == AbilityEffectType.Override || ability.StatusKind == StatusKind.Stun)
+                {
+                    bonus = Mathf.Max(bonus, 4f);
+                }
+            }
+
+            return bonus;
         }
 
         // The target search for one specific ability. Which units count is entirely IsValidTarget's
@@ -291,10 +493,7 @@ namespace Tactica.Combat
             // prepending 0 steps keeps the whole list sorted by actual path cost - which lets the
             // destination pickers below take the first acceptable tile and get the cheapest one,
             // exactly, rather than approximating cost with straight-line distance.
-            List<Vector2Int> standingTiles = new List<Vector2Int> { aiUnit.GridCoords };
-
-            standingTiles.AddRange(
-                gridManagerRef.GetTilesInMoveRange(aiUnit.GridCoords, aiUnit.EffectiveStats.Move, aiUnit.EffectiveStats.Jump));
+            List<Vector2Int> standingTiles = StandingTiles(aiUnit);
 
             GridUnit bestReachable = null;
             int bestReachableHP = int.MaxValue;
@@ -320,9 +519,8 @@ namespace Tactica.Combat
                     continue;
                 }
 
-                // ActionResolver owns the relationship rule, placeholder and all. Reimplementing
-                // "anyone who is not me is an enemy" here would mean two definitions to find and
-                // fix when factions land - and they would drift apart in the meantime.
+                // ActionResolver owns the relationship rule (factions, KO, Revive). A second copy
+                // here would drift from it.
                 if (!combatManagerRef.Resolver.IsValidTarget(aiUnit, candidate, ability))
                 {
                     continue;
@@ -330,16 +528,13 @@ namespace Tactica.Combat
 
                 int distance = DistanceFromClosestStandingTile(standingTiles, candidate.GridCoords);
 
-                if (distance <= ability.Range)
+                if (distance <= combatManagerRef.Resolver.GetBaseRange(aiUnit, ability))
                 {
                     reachableCount++;
 
-                    // PLACEHOLDER HEURISTIC: lowest current HP wins - "finish the wounded one".
-                    // It is cheap, legible, and completely ignores what a target can actually do.
-                    // Real threat evaluation weighs damage output, healers and buffers first,
-                    // whether a kill is actually securable this turn, and how exposed the AI
-                    // leaves itself by committing. That is future work and will replace this
-                    // comparison, not wrap it.
+                    // Lowest current HP wins here. This search is now only the fallback when
+                    // EvaluateActions finds nothing worth doing - the scored evaluation above makes
+                    // the real choice whenever any action is in reach.
                     int hp = candidate.CurrentStats.HP;
 
                     // Tie-break on how far the unit actually has to WALK, not on `distance` above.
@@ -372,7 +567,8 @@ namespace Tactica.Combat
 
             if (bestReachable != null)
             {
-                Vector2Int attackFrom = FirstTileInRangeOf(standingTiles, bestReachable.GridCoords, ability.Range);
+                Vector2Int attackFrom = FirstTileInRangeOf(
+                    standingTiles, bestReachable.GridCoords, combatManagerRef.Resolver.GetBaseRange(aiUnit, ability));
 
                 return new AITargetDecision(
                     bestReachable, ability, true, bestReachableDistance, reachableCount, attackFrom);
@@ -386,7 +582,10 @@ namespace Tactica.Combat
                 // only breaks ties, and takes over for tiles the walk cannot reach at all.
                 Dictionary<Vector2Int, int> walk = gridManagerRef.GetWalkDistances(
                     nearest.GridCoords, aiUnit.EffectiveStats.Jump);
-                Vector2Int approachFrom = ClosestTileTo(standingTiles, nearest.GridCoords, walk);
+                // Walking into Overwatch only when every way forward is covered - then it walks on
+                // regardless, rather than freezing in place until the watch runs out.
+                List<Vector2Int> safe = standingTiles.Where(tile => tile == aiUnit.GridCoords || !Watched(aiUnit, tile)).ToList();
+                Vector2Int approachFrom = ClosestTileTo(safe.Count > 1 ? safe : standingTiles, nearest.GridCoords, walk);
 
                 return new AITargetDecision(nearest, ability, false, nearestDistance, 0, approachFrom);
             }
@@ -395,144 +594,39 @@ namespace Tactica.Combat
             return new AITargetDecision(null, ability, false, 0, 0, aiUnit.GridCoords);
         }
 
-        // The cheapest tile to attack from. standingTiles is ordered by path cost with the current
-        // position first, so the first acceptable entry is the one requiring the fewest steps -
-        // and staying put wins whenever it is already good enough.
-        private static Vector2Int FirstTileInRangeOf(List<Vector2Int> standingTiles, Vector2Int target, int range)
-        {
-            for (int i = 0; i < standingTiles.Count; i++)
-            {
-                if (GridManager.GetGridDistance(standingTiles[i], target) <= range)
-                {
-                    return standingTiles[i];
-                }
-            }
-
-            // Unreachable by construction - the caller only calls this for a target already known
-            // to be in range from somewhere. Falling back to the current tile keeps it total.
-            return standingTiles[0];
-        }
-
-        // The tile that gets closest to the target.
+        // The ability the AI walks in with when EvaluateActions finds nothing in reach this turn -
+        // only the approach uses it; real choices (heals, hacks, debuffs) are scored there.
         //
-        // Manhattan distance alone ties often: every tile on the same diagonal band around the
-        // target is equidistant, so the pick would fall to whatever order the flood fill emitted -
-        // deterministic, but it makes the unit drift sideways instead of walking at its target.
-        //
-        // Squared Euclidean breaks those ties the way a person would expect, and stays exact
-        // integer arithmetic (no sqrt, no float comparison). It is only a tie-break: Manhattan
-        // still decides which tile is genuinely closer, because that is the metric movement and
-        // range are measured in.
-        private static Vector2Int ClosestTileTo(List<Vector2Int> standingTiles, Vector2Int target, Dictionary<Vector2Int, int> walk)
-        {
-            Vector2Int best = standingTiles[0];
-            int bestDistance = WalkOrStraight(best, target, walk);
-            int bestSpread = SquaredDistance(best, target);
-
-            for (int i = 1; i < standingTiles.Count; i++)
-            {
-                int distance = WalkOrStraight(standingTiles[i], target, walk);
-                int spread = SquaredDistance(standingTiles[i], target);
-
-                if (distance < bestDistance || (distance == bestDistance && spread < bestSpread))
-                {
-                    best = standingTiles[i];
-                    bestDistance = distance;
-                    bestSpread = spread;
-                }
-            }
-
-            return best;
-        }
-
-        // Walking steps when the tile is connected to the target; otherwise a large penalty plus the
-        // straight-line distance, so any connected tile beats any cut-off one.
-        private static int WalkOrStraight(Vector2Int tile, Vector2Int target, Dictionary<Vector2Int, int> walk)
-        {
-            const int Unreachable = 10000;
-            return walk.TryGetValue(tile, out int steps) ? steps : Unreachable + GridManager.GetGridDistance(tile, target);
-        }
-
-        private static int SquaredDistance(Vector2Int a, Vector2Int b)
-        {
-            int dx = a.x - b.x;
-            int dy = a.y - b.y;
-
-            return dx * dx + dy * dy;
-        }
-
-        // Fewest steps between the target and any tile the unit could attack from.
-        //
-        // O(reachable tiles x candidates), which at Move 2 on a 10x10 board is a few dozen integer
-        // comparisons per turn. Worth revisiting only if move ranges get large enough that this
-        // shows up in a profile.
-        private static int DistanceFromClosestStandingTile(List<Vector2Int> standingTiles, Vector2Int target)
-        {
-            int best = int.MaxValue;
-
-            for (int i = 0; i < standingTiles.Count; i++)
-            {
-                int distance = GridManager.GetGridDistance(standingTiles[i], target);
-
-                if (distance < best)
-                {
-                    best = distance;
-                }
-            }
-
-            return best;
-        }
-
-        // PLACEHOLDER: the AI's attack choice. It reboots downed allies (FindBestTarget) but never
-        // hacks - an enemy Override on the player's crew needs a counterplay story first. Scoring
-        // abilities by expected value (damage, a securable kill, a hack chance) replaces this.
-        //
-        // Prefers the first Damage ability, so a job that lists Override or Reboot first does not
-        // leave the AI hacking at random; falls back to the first unlock of any kind.
+        // The strongest usable Damage ability, so the approach is measured against its main
+        // attack's range; falls back to anything usable.
         private static AbilityDefinition SelectAbility(GridUnit unit)
         {
-            if (unit.CurrentJob == null)
-            {
-                return null;
-            }
+            // Only what it can actually use now: right weapon in hand, enough MP. A basic Attack
+            // (MP 0, no requirement) is always among these for a unit with a weapon.
+            List<AbilityDefinition> usable = unit.GetActionAbilities()
+                .Where(ability => ability.MPCost <= unit.CurrentStats.MP && unit.HasWeaponType(ability.RequiredWeapon))
+                .ToList();
 
-            List<AbilityDefinition> unlocked = unit.CurrentJob.GetUnlockedAbilities(unit.Level);
+            // Strongest damage first, so an enemy with a real skill uses it over the plain Attack.
+            AbilityDefinition best = usable
+                .Where(ability => ability.EffectType == AbilityEffectType.Damage)
+                .OrderByDescending(ability => ability.Power + (ability.UsesWeapon && unit.Weapon != null ? unit.Weapon.Power : 0))
+                .FirstOrDefault();
 
-            foreach (AbilityDefinition ability in unlocked)
-            {
-                if (ability.EffectType == AbilityEffectType.Damage)
-                {
-                    return ability;
-                }
-            }
-
-            return unlocked.Count > 0 ? unlocked[0] : null;
-        }
-
-        // The first unlocked ability of this effect the unit can pay for, or null.
-        private static AbilityDefinition FindAffordable(GridUnit unit, AbilityEffectType effect)
-        {
-            if (unit.CurrentJob == null)
-            {
-                return null;
-            }
-
-            foreach (AbilityDefinition ability in unit.CurrentJob.GetUnlockedAbilities(unit.Level))
-            {
-                if (ability.EffectType == effect && unit.CurrentStats.MP >= ability.MPCost)
-                {
-                    return ability;
-                }
-            }
-
-            return null;
+            return best != null ? best : usable.FirstOrDefault();
         }
 
         // The whole output of this layer. Says who decided, what it picked, and on what grounds -
-        // "why" matters more than "who" while the heuristic is still a placeholder, because a
-        // sensible-looking target chosen for the wrong reason is the failure worth catching.
-        private static void LogDecision(GridUnit aiUnit, AITargetDecision decision)
+        // "why" matters more than "who" when tuning the scores, because a sensible-looking target
+        // chosen for the wrong reason is the failure worth catching.
+        private void LogDecision(GridUnit aiUnit, AITargetDecision decision)
         {
+            if (decision.Retreat)
+            {
+                Debug.Log($"AI: {aiUnit.DisplayName} is badly hurt and falls back to {decision.DestinationTile}.", aiUnit);
+                return;
+            }
+
             if (decision.Ability == null)
             {
                 Debug.Log(
@@ -555,18 +649,21 @@ namespace Tactica.Combat
             {
                 Debug.Log(
                     $"AI: {aiUnit.DisplayName} picks {target.DisplayName} ({targetHP}) with {decision.Ability.AbilityName}. " +
-                    $"Reason: lowest HP of {decision.ReachableTargetCount} reachable target(s); " +
-                    $"distance {decision.DistanceFromBestStandingTile} vs range {decision.Ability.Range}.",
+                    $"Reason: best score {decision.Score:0.0} of {decision.ReachableTargetCount} option(s) in reach, " +
+                    $"aimed at {decision.Center} from {decision.DestinationTile}.",
                     aiUnit);
                 return;
             }
 
-            int shortfall = decision.DistanceFromBestStandingTile - decision.Ability.Range;
+            // The resolver's reach, not the ability's own Range: a weapon ability's reach comes
+            // from the weapon (Aimed Shot authors 0 and fires as far as the rifle).
+            int range = combatManagerRef.Resolver.GetBaseRange(aiUnit, decision.Ability);
+            int shortfall = decision.DistanceFromBestStandingTile - range;
 
             Debug.Log(
                 $"AI: {aiUnit.DisplayName} wants {target.DisplayName} ({targetHP}) but cannot reach anyone this turn. " +
                 $"Reason: nearest valid target, still {shortfall} step(s) short even after moving " +
-                $"(distance {decision.DistanceFromBestStandingTile} vs range {decision.Ability.Range}).",
+                $"(distance {decision.DistanceFromBestStandingTile} vs range {range}).",
                 aiUnit);
         }
     }

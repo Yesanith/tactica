@@ -72,6 +72,54 @@ namespace Tactica.Tests
         }
 
         [Test]
+        public void EnemyLevelFollowsTheCrewAndTheDanger()
+        {
+            Assert.AreEqual(1, ContractGenerator.EnemyLevel(1, 1), "A fresh crew meets the danger itself.");
+            Assert.AreEqual(4, ContractGenerator.EnemyLevel(4, 1));
+            Assert.AreEqual(8, ContractGenerator.EnemyLevel(1, 10), "Neon Row: two below the crew.");
+            Assert.AreEqual(10, ContractGenerator.EnemyLevel(ContractGenerator.EvenDanger, 10));
+            Assert.AreEqual(11, ContractGenerator.EnemyLevel(4, 10), "Spire Gate: one above.");
+        }
+
+        [TestCase(1)]
+        [TestCase(4)]
+        public void AStrongCrewMeetsStrongerEnemies(int danger)
+        {
+            DistrictDefinition district = District(danger);
+            int baseLevel = ContractGenerator.EnemyLevel(danger, 10);
+
+            for (int seed = 0; seed < 100; seed++)
+            {
+                MissionDefinition mission = ContractGenerator.Generate(district, Escort, seed, ContractGenerator.Purpose.Listing, 10);
+
+                foreach (UnitEntry enemy in mission.opponents.Where(e => e.faction == Faction.Enemy))
+                {
+                    Assert.That(enemy.level, Is.InRange(baseLevel, baseLevel + 2), mission.missionName);
+                }
+            }
+        }
+
+        [Test]
+        public void VeteransJoinOnceTheEnemiesAreStrongEnough()
+        {
+            Assert.AreEqual(0, ContractGenerator.EliteCount(ContractGenerator.EliteFromLevel - 1, 6));
+            Assert.AreEqual(1, ContractGenerator.EliteCount(ContractGenerator.EliteFromLevel, 6));
+            Assert.AreEqual(2, ContractGenerator.EliteCount(ContractGenerator.EliteFromLevel + ContractGenerator.EliteEvery, 6));
+            Assert.AreEqual(1, ContractGenerator.EliteCount(30, 3), "Never more than half the squad.");
+
+            DistrictDefinition district = District(3);
+            JobDefinition veteran = TestData.Job("Duelist");
+            district.elitePool.Add(veteran);
+
+            int Veterans(int crewLevel) => Enumerable.Range(0, 50)
+                .Select(seed => ContractGenerator.Generate(district, Escort, seed, ContractGenerator.Purpose.Listing, crewLevel))
+                .Sum(m => m.opponents.Count(e => e.job == veteran));
+
+            Assert.AreEqual(0, Veterans(1));
+            Assert.Greater(Veterans(12), 50);
+        }
+
+        [Test]
         public void MoreDangerMeansMoreEnemies()
         {
             double quiet = Many(1, ContractGenerator.Purpose.Listing).Average(m => m.opponents.Count(e => e.faction == Faction.Enemy));

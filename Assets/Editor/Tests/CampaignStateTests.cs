@@ -260,6 +260,41 @@ namespace Tactica.Tests
             CollectionAssert.AreNotEqual(before.Select(Signature), state.Listings(home).Select(Signature));
         }
 
+        [Test]
+        public void GeneratedContractsFollowTheCrewsLevel()
+        {
+            DistrictDefinition home = state.CurrentDistrict;
+            Assume.That(home.enemyPool.Count > 0 && config.GeneratedListings > 0, "Needs generated contracts.");
+            int Lowest() => state.Listings(home).Skip(home.listings.Count)
+                .SelectMany(m => m.opponents.Where(e => e.faction == Faction.Enemy)).Min(e => e.level);
+
+            int before = Lowest();
+
+            foreach (RosterUnit unit in state.Roster)
+            {
+                unit.Level = 12;
+            }
+
+            Assert.AreEqual(12, state.CrewLevel);
+            Assert.AreEqual(ContractGenerator.EnemyLevel(home.danger, 12), Lowest());
+            Assert.Greater(Lowest(), before);
+        }
+
+        [Test]
+        public void OpponentsCarryWeaponsForTheirLevel()
+        {
+            EquipmentDefinition blade = TestData.Job("Raider").DefaultWeapon;
+            Assume.That(blade.Tier == 1, "Raiders start with a Mk I.");
+
+            Assert.AreEqual(blade, config.WeaponForLevel(blade, 3));
+            Assert.AreEqual(2, config.WeaponForLevel(blade, 4).Tier);
+            Assert.AreEqual(3, config.WeaponForLevel(blade, 9).Tier);
+            Assert.AreEqual(blade.Type, config.WeaponForLevel(blade, 9).Type);
+
+            EquipmentDefinition gauntlet = TestData.Job("ChromeBrute").DefaultWeapon;
+            Assert.AreEqual(gauntlet, config.WeaponForLevel(gauntlet, 1), "Never downgraded.");
+        }
+
         private static string Signature(MissionDefinition mission)
         {
             return $"{mission.missionName}|{mission.map.seed}|{string.Join(",", mission.opponents.Select(e => e.unitName))}";

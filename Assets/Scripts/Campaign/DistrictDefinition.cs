@@ -49,8 +49,13 @@ namespace Tactica.Campaign
 
         [Header("Generated work")]
         [Tooltip("Enemy jobs this district's generated contracts and road ambushes draw from, at a " +
-                 "level set by its danger. Empty: nothing is generated here.")]
+                 "level set by its danger and the crew's level. Empty: nothing is generated here.")]
         public List<JobDefinition> enemyPool = new List<JobDefinition>();
+
+        [Tooltip("Crew jobs that turn up among generated enemies once they reach " +
+                 "ContractGenerator.EliteFromLevel - veterans with a full kit, FFT's human enemies. " +
+                 "Keep hackers out: enemies taking over the crew is still deferred.")]
+        public List<JobDefinition> elitePool = new List<JobDefinition>();
 
         [Tooltip("Added to the shop once the district's story is finished.")]
         public List<EquipmentDefinition> clearedStock = new List<EquipmentDefinition>();

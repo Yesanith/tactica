@@ -117,6 +117,16 @@ namespace Tactica.Campaign
         }
 
         // The district's authored contracts, then the generated ones for the current board version.
+        // What generated fights scale to: the average level of the strongest crew that could deploy.
+        public int CrewLevel
+        {
+            get
+            {
+                List<int> levels = Roster.Select(unit => unit.Level).OrderByDescending(level => level).Take(config.MaxDeployed).ToList();
+                return levels.Count == 0 ? 1 : Mathf.RoundToInt((float)levels.Average());
+            }
+        }
+
         public List<MissionDefinition> Listings(DistrictDefinition district)
         {
             if (district == null)
@@ -129,7 +139,7 @@ namespace Tactica.Campaign
             for (int i = 0; i < config.GeneratedListings; i++)
             {
                 MissionDefinition generated = ContractGenerator.Generate(
-                    district, config.EscortJob, BoardSeed(district, i), ContractGenerator.Purpose.Listing);
+                    district, config.EscortJob, BoardSeed(district, i), ContractGenerator.Purpose.Listing, CrewLevel);
 
                 if (generated != null)
                 {
@@ -244,7 +254,7 @@ namespace Tactica.Campaign
             unchecked
             {
                 int seed = ContractGenerator.StableHash(destination.districtName) * 17 + BoardVersion * 31 + Mathf.FloorToInt(pick * 1000f);
-                MissionDefinition generated = ContractGenerator.Generate(destination, config.EscortJob, seed, ContractGenerator.Purpose.Road);
+                MissionDefinition generated = ContractGenerator.Generate(destination, config.EscortJob, seed, ContractGenerator.Purpose.Road, CrewLevel);
 
                 if (generated != null)
                 {

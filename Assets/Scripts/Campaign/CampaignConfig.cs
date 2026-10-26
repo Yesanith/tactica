@@ -145,6 +145,35 @@ namespace Tactica.Campaign
         public IReadOnlyList<EquipmentDefinition> Equipment => equipment;
         public IReadOnlyList<EquipmentDefinition> StartingInventory => startingInventory;
 
+        // Opponents' weapon tier by level: Mk I to level 3, Mk II to 6, Mk III after - about when a
+        // crew can afford each, so enemies keep pace with the shop instead of swinging Mk I forever.
+        public static int WeaponTierFor(int level)
+        {
+            return level <= 3 ? 1 : level <= 6 ? 2 : 3;
+        }
+
+        // The catalogue's weapon of the same type at the tier for this level. The default itself
+        // when it is already that good (Chrome Brute's Mk II) or the catalogue has nothing better.
+        public EquipmentDefinition WeaponForLevel(EquipmentDefinition weapon, int level)
+        {
+            int tier = WeaponTierFor(level);
+
+            if (weapon == null || weapon.Tier >= tier)
+            {
+                return weapon;
+            }
+
+            foreach (EquipmentDefinition item in equipment)
+            {
+                if (item != null && item.Type == weapon.Type && item.Tier == tier)
+                {
+                    return item;
+                }
+            }
+
+            return weapon;
+        }
+
         public EquipmentDefinition FindEquipment(string assetName)
         {
             if (string.IsNullOrEmpty(assetName))

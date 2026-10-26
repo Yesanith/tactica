@@ -171,11 +171,11 @@ namespace Tactica.Campaign
                     continue;
                 }
 
-                // Opponents fight with their job's fixed kit by level, its default weapon, and the
-                // first Reaction ability the kit unlocks.
+                // Opponents fight with their job's fixed kit by level, its default weapon raised to
+                // the tier for their level, and the first Reaction ability the kit unlocks.
                 List<AbilityDefinition> kit = entry.job.GetUnlockedAbilities(entry.level);
                 unit.SetActionLoadout(WithBasicAttack(kit.Where(a => a.Slot == AbilitySlot.Action)));
-                unit.SetWeapon(entry.job.DefaultWeapon);
+                unit.SetWeapon(config != null ? config.WeaponForLevel(entry.job.DefaultWeapon, entry.level) : entry.job.DefaultWeapon);
                 unit.SetPassives(kit.FirstOrDefault(a => a.Slot == AbilitySlot.Reaction), null, null);
                 unit.SetHackResistance(entry.hackResistance);
                 unit.SetBoss(entry.boss);

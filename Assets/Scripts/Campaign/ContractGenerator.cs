@@ -26,8 +26,32 @@ namespace Tactica.Campaign
         private static readonly string[] RoadNames = { "Roadblock", "Toll Gang", "Alley Ambush", "Overpass Jump", "Checkpoint" };
         private static readonly string[] EscortNames = { "Informant", "Courier", "Witness", "Fixer" };
 
+        // Enemy level relative to the crew, per point of danger above or below this: a danger-3
+        // district fights at the crew's level, Neon Row (1) two below, Spire Gate (4) one above.
+        public const int EvenDanger = 3;
+
+        // Generated enemies at this level or above bring veterans from the district's elite pool:
+        // one at this level, one more every EliteEvery levels, never more than half the squad.
+        // The start-tier enemy kits alone cannot keep up with a crew in mid and top jobs.
+        public const int EliteFromLevel = 6;
+        public const int EliteEvery = 3;
+
+        public static int EliteCount(int enemyLevel, int squad)
+        {
+            int elites = enemyLevel < EliteFromLevel ? 0 : 1 + (enemyLevel - EliteFromLevel) / EliteEvery;
+            return Mathf.Min(elites, squad / 2);
+        }
+
+        // The level a district's enemies start at for a crew of this level - FFT's random battles
+        // follow the party the same way. Never below the danger itself, so a fresh crew still
+        // finds the dangerous districts dangerous.
+        public static int EnemyLevel(int danger, int crewLevel)
+        {
+            return Mathf.Max(danger, crewLevel + danger - EvenDanger);
+        }
+
         // Null when the district has no enemy pool - nothing to generate from.
-        public static MissionDefinition Generate(DistrictDefinition district, JobDefinition escortJob, int seed, Purpose purpose)
+        public static MissionDefinition Generate(DistrictDefinition district, JobDefinition escortJob, int seed, Purpose purpose, int crewLevel = 1)
         {
             List<JobDefinition> pool = district?.enemyPool.Where(job => job != null).ToList();
 
@@ -58,13 +82,17 @@ namespace Tactica.Campaign
                 },
             };
 
-            // Opponents at the district's level: danger, sometimes one above.
+            // Opponents at the district's level for this crew, sometimes one above.
+            int level = EnemyLevel(danger, crewLevel);
             List<UnitEntry> enemies = new List<UnitEntry>();
+
+            List<JobDefinition> elites = district.elitePool.Where(job => job != null).ToList();
+            int eliteCount = elites.Count > 0 ? EliteCount(level, count) : 0;
 
             for (int i = 0; i < count; i++)
             {
-                JobDefinition job = pool[rng.Next(pool.Count)];
-                enemies.Add(new UnitEntry { job = job, level = danger + rng.Next(2), faction = Faction.Enemy });
+                JobDefinition job = i < eliteCount ? elites[rng.Next(elites.Count)] : pool[rng.Next(pool.Count)];
+                enemies.Add(new UnitEntry { job = job, level = level + rng.Next(2), faction = Faction.Enemy });
             }
 
             NameEnemies(enemies);
@@ -83,7 +111,7 @@ namespace Tactica.Campaign
             if (objective == MissionObjective.Protect)
             {
                 string escort = EscortNames[rng.Next(EscortNames.Length)];
-                mission.opponents.Add(new UnitEntry { unitName = escort, job = escortJob, level = danger, faction = Faction.Player, guest = true });
+                mission.opponents.Add(new UnitEntry { unitName = escort, job = escortJob, level = level, faction = Faction.Player, guest = true });
                 mission.objectiveUnitName = escort;
             }
 
@@ -92,7 +120,7 @@ namespace Tactica.Campaign
                 mission.surviveTurns = 4 + danger / 2 + rng.Next(2);
             }
 
-            mission.credits = 60 + 30 * danger + 15 * count + (objective != MissionObjective.DefeatAll ? 20 : 0);
+            mission.credits = 60 + 30 * danger + 15 * count + 10 * (level - danger) + (objective != MissionObjective.DefeatAll ? 20 : 0);
             mission.missionName = purpose == Purpose.Road
                 ? RoadNames[rng.Next(RoadNames.Length)]
                 : $"{Adjectives[rng.Next(Adjectives.Length)]} {Nouns[rng.Next(Nouns.Length)]}";

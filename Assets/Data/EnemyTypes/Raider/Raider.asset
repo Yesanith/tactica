@@ -24,9 +24,9 @@ MonoBehaviour:
     Jump: 1
     Evasion: 10
   statGrowthPerLevel:
-    MaxHP: 2
+    MaxHP: 3
     MaxMP: 0
-    Strength: 1
+    Strength: 2
     Tech: 0
     Defense: 1
     Speed: 0

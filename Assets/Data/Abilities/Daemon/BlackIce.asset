@@ -18,7 +18,7 @@ MonoBehaviour:
   range: 3
   areaOfEffect: 1
   effectType: 0
-  power: 6
+  power: 4
   scaling: 1
   usesWeapon: 0
   statModifier:
@@ -40,6 +40,11 @@ MonoBehaviour:
   slot: 0
   jpCost: 400
   requiredWeapon: 0
+  inflictsStatus: 0
+  woundedBonus: 0
+  bossChancePercent: 100
+  sparesAllies: 0
+  chargeTime: 0
   targetsSelf: 0
   targetsAllies: 0
   targetsEnemies: 1

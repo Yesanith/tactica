@@ -26,7 +26,7 @@ MonoBehaviour:
   statGrowthPerLevel:
     MaxHP: 2
     MaxMP: 1
-    Strength: 3
+    Strength: 2
     Tech: 0
     Defense: 0
     Speed: 1

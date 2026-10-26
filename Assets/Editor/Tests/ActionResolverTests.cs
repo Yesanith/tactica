@@ -38,19 +38,30 @@ namespace Tactica.Tests
 
             int power = attack.Power + knight.EffectiveStats.Strength + knight.Weapon.Power;
             Assert.AreEqual(power, resolver.GetPower(knight, attack));
-            Assert.AreEqual(Mathf.Max(1, power - raider.EffectiveStats.Defense), resolver.CalculateDamage(knight, raider, attack));
+            Assert.AreEqual(Mathf.Max(1, power - raider.EffectiveStats.Defense, Mathf.CeilToInt(power / (float)ActionResolver.MinDamageDivisor)), resolver.CalculateDamage(knight, raider, attack));
         }
 
         [Test]
-        public void DamageNeverDropsBelowOne()
+        public void DefenseSoaksAtMostThreeQuarters()
         {
             AbilityDefinition attack = TestData.Ability("Attack");
             GridUnit gooner = units.Make("Gooner", 1, Faction.Enemy, new Vector2Int(0, 0));
             GridUnit brute = units.Make("ChromeBrute", 40, Faction.Player, new Vector2Int(0, 1));
+            int power = resolver.GetPower(gooner, attack);
 
-            Assume.That(resolver.GetPower(gooner, attack) <= brute.EffectiveStats.Defense,
-                "Needs a defender whose Defense outweighs the attack.");
-            Assert.AreEqual(1, resolver.CalculateDamage(gooner, brute, attack));
+            Assume.That(power <= brute.EffectiveStats.Defense, "Needs a defender whose Defense outweighs the attack.");
+            Assert.AreEqual(Mathf.Max(1, Mathf.CeilToInt(power / (float)ActionResolver.MinDamageDivisor)),
+                resolver.CalculateDamage(gooner, brute, attack));
+        }
+
+        [Test]
+        public void TheDamageFloorIsAQuarterOfThePower()
+        {
+            Assert.AreEqual(1, ActionResolver.DamageAfterDefense(0, 10));
+            Assert.AreEqual(1, ActionResolver.DamageAfterDefense(3, 10));
+            Assert.AreEqual(5, ActionResolver.DamageAfterDefense(20, 30));
+            Assert.AreEqual(5, ActionResolver.DamageAfterDefense(20, 15));
+            Assert.AreEqual(12, ActionResolver.DamageAfterDefense(20, 8));
         }
 
         // --- Hit chance and facing -------------------------------------------------------------

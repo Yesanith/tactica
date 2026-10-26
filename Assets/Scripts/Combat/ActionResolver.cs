@@ -46,6 +46,11 @@ namespace Tactica.Combat
         // below. FFT's longbow rule (5 + height difference / 2), applied to every ranged ability.
         public const int HeightPerRangeStep = 2;
 
+        // Defense can soak at most three quarters of a hit: damage never drops below a quarter
+        // of the attack's power. Without it, Defense outgrowing an enemy's Strength made armoured
+        // units take 1 from everything - immune, not tough.
+        public const int MinDamageDivisor = 4;
+
         // Seedable so a test can pin the rolls. Owned here rather than using UnityEngine.Random,
         // which would tie the resolver to engine state it otherwise never needs.
         private readonly System.Random random;
@@ -311,12 +316,8 @@ namespace Tactica.Combat
             return ability.Power + stat + weapon;
         }
 
-        // Power + scaling stat (+ weapon) - defender's Defense, floored at 1.
-        //
-        // The floor matters for more than tuning. Without it a well-armoured defender produces a
-        // negative result, and a negative damage value passed to ApplyDamage would heal the
-        // target - an attack that repairs its victim. Flooring at 1 also keeps a chip of progress
-        // in every hit, so no matchup can stall forever.
+        // Power + scaling stat (+ weapon) - defender's Defense, floored at a quarter of the power
+        // (and at 1) - see DamageAfterDefense.
         //
         // Returns 0 for non-damage abilities rather than a nonsense number.
         public int CalculateDamage(GridUnit user, GridUnit target, AbilityDefinition ability)
@@ -326,7 +327,16 @@ namespace Tactica.Combat
                 return 0;
             }
 
-            return Mathf.Max(1, GetPower(user, ability) - target.EffectiveStats.Defense);
+            return DamageAfterDefense(GetPower(user, ability), target.EffectiveStats.Defense);
+        }
+
+        // The floor matters for more than tuning. Without one a well-armoured defender produces a
+        // negative result, and a negative damage value passed to ApplyDamage would heal the
+        // target - an attack that repairs its victim. Flooring at a share of the power keeps
+        // armour valuable without making anyone untouchable, and no matchup can stall forever.
+        public static int DamageAfterDefense(int power, int defense)
+        {
+            return Mathf.Max(1, power - defense, (power + MinDamageDivisor - 1) / MinDamageDivisor);
         }
 
         // Where the user would strike the target from, relative to the target's facing.
@@ -575,7 +585,7 @@ namespace Tactica.Combat
 
                 if (hits)
                 {
-                    int damage = Mathf.Max(1, GetPower(watcher, watch.Ability) - mover.EffectiveStats.Defense);
+                    int damage = DamageAfterDefense(GetPower(watcher, watch.Ability), mover.EffectiveStats.Defense);
                     mover.ApplyDamage(damage);
                     string ko = mover.IsKnockedOut ? " KNOCKED OUT!" : string.Empty;
                     message = $"OVERWATCH: {watcher.DisplayName} fires on {mover.DisplayName} for {damage} " +
@@ -724,7 +734,7 @@ namespace Tactica.Combat
                     lines.Add($"{defender.DisplayName} counters!");
                     defender.FaceTowards(attacker.GridCoords);
 
-                    int damage = Mathf.Max(1, GetPower(defender, reaction) - attacker.EffectiveStats.Defense);
+                    int damage = DamageAfterDefense(GetPower(defender, reaction), attacker.EffectiveStats.Defense);
                     bool wasStanding = !attacker.IsKnockedOut;
                     attacker.ApplyDamage(damage);
                     lines.Add($"{attacker.DisplayName} takes {damage} ({attacker.CurrentStats.HP}/{attacker.EffectiveStats.MaxHP}).");

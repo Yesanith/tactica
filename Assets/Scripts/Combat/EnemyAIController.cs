@@ -262,8 +262,10 @@ namespace Tactica.Combat
             AITargetDecision best = EvaluateActions(aiUnit);
 
             // Badly hurt and nothing worth the risk (no kill, no heal): pull back toward friends.
+            // The last one standing has no friends to fall back on and fights on - otherwise two
+            // lone survivors back away from each other forever.
             if (aiUnit.CurrentStats.HP < aiUnit.EffectiveStats.MaxHP * RetreatHealthFraction
-                && (!best.HasTarget || best.Score < RetreatUnlessScore))
+                && (!best.HasTarget || best.Score < RetreatUnlessScore) && HasStandingAlly(aiUnit))
             {
                 AITargetDecision retreat = FindRetreat(aiUnit);
 
@@ -296,6 +298,10 @@ namespace Tactica.Combat
         private const float HealThreshold = 0.6f;
         private const float ReviveValue = 30f;
         private const float BuffValue = 5f;
+
+        // A buff only counts on an ally a hostile unit stands within this many tiles of. Without it
+        // a unit with a party buff spent the whole approach recasting it instead of closing in.
+        private const int BuffThreatRange = 7;
         private const float DebuffValue = 6f;
         private const float StunValue = 14f;
         private const float DotValue = 8f;
@@ -422,7 +428,7 @@ namespace Tactica.Combat
                         break;
 
                     case AbilityEffectType.Buff:
-                        score += ally && !target.HasStatusFrom(ability) ? BuffValue : 0f;
+                        score += ally && !target.HasStatusFrom(ability) && UnderThreat(target) ? BuffValue : 0f;
                         break;
 
                     default:
@@ -452,6 +458,21 @@ namespace Tactica.Combat
             }
 
             return score;
+        }
+
+        // Whether any unit hostile to this one stands close enough to matter this turn or next.
+        private bool UnderThreat(GridUnit unit)
+        {
+            foreach (GridUnit other in combatManagerRef.TurnOrder)
+            {
+                if (other != null && !other.IsKnockedOut && !other.IsFlatlined && other.CurrentFaction != unit.CurrentFaction
+                    && GridManager.GetGridDistance(other.GridCoords, unit.GridCoords) <= BuffThreatRange)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         // Medics and hackers first: a unit that heals, reboots, hacks or stuns is worth more dead

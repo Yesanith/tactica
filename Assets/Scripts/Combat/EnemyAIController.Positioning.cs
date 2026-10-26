@@ -43,6 +43,12 @@ namespace Tactica.Combat
             return false;
         }
 
+        private bool HasStandingAlly(GridUnit unit)
+        {
+            return combatManagerRef.TurnOrder.Any(other => other != null && other != unit && !other.IsKnockedOut
+                                                           && !other.IsFlatlined && other.CurrentFaction == unit.CurrentFaction);
+        }
+
         // The standing tile farthest from every standing enemy, ties to the one nearest an ally -
         // out of reach, and back where the healers are. No decision if staying put is already best.
         private AITargetDecision FindRetreat(GridUnit aiUnit)

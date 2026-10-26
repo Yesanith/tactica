@@ -6,6 +6,10 @@ using Tactica.Combat;
 using Tactica.Grid;
 using Tactica.Stats;
 
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
+
 namespace Tactica.UI
 {
     // Screen-space combat HUD: who is acting, who is targeted, and what they can do.
@@ -62,13 +66,48 @@ namespace Tactica.UI
             TurnQueueStrip.Create(transform, combatManagerRef);
 
             // FFT's command is "Act", not "Attack": the menu behind it holds hacks and reboots too.
-            SetButtonLabel(attackButton, "Act");
+            // The number is the keyboard shortcut (see HandleHotkeys).
+            SetButtonLabel(attackButton, "Act  [1]");
+            SetButtonLabel(moveButton, "Move  [2]");
+            SetButtonLabel(waitButton, "Wait  [3]");
+
+            // The authored buttons are Unity's default white; match them to the menus.
+            StyleButton(attackButton);
+            StyleButton(moveButton);
+            StyleButton(waitButton);
+        }
+
+        private static void StyleButton(Button button)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            if (button.image != null)
+            {
+                button.image.color = MenuBuilder.ButtonColor;
+            }
+
+            ColorBlock colors = button.colors;
+            colors.disabledColor = new Color(0.55f, 0.55f, 0.55f, 0.6f);
+            button.colors = colors;
+
+            TMP_Text text = button.GetComponentInChildren<TMP_Text>();
+
+            if (text != null)
+            {
+                text.color = MenuBuilder.TextColor;
+            }
         }
 
         // The targeting preview follows the cursor, so it is polled rather than evented - the
         // hovered tile changes with the camera as well as the mouse.
         private void Update()
         {
+            RefreshCommandButtons();
+            HandleHotkeys();
+
             if (previewLabel == null)
             {
                 return;
@@ -76,9 +115,23 @@ namespace Tactica.UI
 
             string preview = null;
 
-            if (actionController != null && cursor != null && cursor.HoveredTile.HasValue)
+            if (actionController != null && actionController.Mode == PlayerActionMode.ChoosingFacing)
+            {
+                preview = "Choose facing: click a lit tile, or press Wait again to keep it";
+            }
+            else if (actionController != null && cursor != null && cursor.HoveredTile.HasValue)
             {
                 preview = actionController.DescribeTargetPreview(cursor.HoveredTile.Value);
+            }
+
+            // With nothing hovered, say what the board is waiting for.
+            if (string.IsNullOrEmpty(preview) && actionController != null && actionController.Mode == PlayerActionMode.Moving)
+            {
+                preview = "Move: click a lit tile   (Esc / right click to cancel)";
+            }
+            else if (string.IsNullOrEmpty(preview) && actionController != null && actionController.PendingAbility != null)
+            {
+                preview = $"{actionController.PendingAbility.AbilityName}: pick a target   (Esc / right click to cancel)";
             }
 
             previewLabel.transform.parent.gameObject.SetActive(!string.IsNullOrEmpty(preview));
@@ -199,19 +252,56 @@ namespace Tactica.UI
             SetTurnIndicator(unit);
             CloseAbilityMenu();
 
-            // Greyed out on anyone else's turn. PlayerActionController refuses those presses
-            // anyway - this is so the buttons do not look clickable while the AI acts.
-            SetActionButtonsInteractable(unit != null && unit.IsPlayerControlled);
-
             // A new turn means the previous turn's target is no longer meaningful.
             HideTargetPanel();
         }
 
-        private void SetActionButtonsInteractable(bool interactable)
+        // Polled: acting and moving have no event of their own. Grey on anyone else's turn (the
+        // controller refuses those presses anyway - this is so they do not look clickable while
+        // the AI acts), and Act / Move grey once spent, so the buttons show what is left of the turn.
+        private void RefreshCommandButtons()
         {
-            if (attackButton != null) attackButton.interactable = interactable;
-            if (moveButton != null) moveButton.interactable = interactable;
-            if (waitButton != null) waitButton.interactable = interactable;
+            GridUnit unit = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
+            bool playerTurn = unit != null && unit.IsPlayerControlled
+                && combatManagerRef.CurrentState == CombatState.WaitingForInput;
+
+            if (attackButton != null) attackButton.interactable = playerTurn && !unit.HasActedThisTurn;
+            if (moveButton != null) moveButton.interactable = playerTurn && !unit.HasMovedThisTurn;
+            if (waitButton != null) waitButton.interactable = playerTurn;
+        }
+
+        // 1 / 2 / 3 press Act / Move / Wait; Escape or a right click backs out of the open menu or
+        // the command in progress. WASD and Q/E already belong to the camera.
+        private void HandleHotkeys()
+        {
+#if ENABLE_INPUT_SYSTEM
+            Keyboard keyboard = Keyboard.current;
+            Mouse mouse = Mouse.current;
+
+            bool cancel = (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+                || (mouse != null && mouse.rightButton.wasPressedThisFrame);
+
+            if (cancel)
+            {
+                if (abilityMenu != null && abilityMenu.gameObject.activeSelf)
+                {
+                    CloseAbilityMenu();
+                }
+                else if (actionController != null)
+                {
+                    actionController.CancelCommand();
+                }
+            }
+
+            if (keyboard == null)
+            {
+                return;
+            }
+
+            if (keyboard.digit1Key.wasPressedThisFrame && attackButton != null && attackButton.interactable) OnAttackPressed();
+            if (keyboard.digit2Key.wasPressedThisFrame && moveButton != null && moveButton.interactable) OnMovePressed();
+            if (keyboard.digit3Key.wasPressedThisFrame && waitButton != null && waitButton.interactable) OnWaitPressed();
+#endif
         }
 
         // Moves the triangle from the previous turn holder's bar to this unit's. Null clears it -
@@ -293,16 +383,28 @@ namespace Tactica.UI
 
             foreach (AbilityDefinition ability in abilities)
             {
-                bool affordable = unit != null && unit.CurrentStats.MP >= ability.MPCost;
-                bool usable = affordable && unit != null && !unit.HasActedThisTurn;
+                // The resolver's own check (MP, weapon in hand), so the menu cannot offer what
+                // execution would refuse; the reason rides on the label.
+                bool canUse = combatManagerRef.Resolver.CanUse(unit, ability, out string reason);
+                bool usable = canUse && unit != null && !unit.HasActedThisTurn;
                 string cost = ability.MPCost > 0 ? $"  {ability.MPCost} MP" : string.Empty;
+                string why = canUse ? string.Empty : $"  ({reason})";
+                int area = combatManagerRef.Resolver.GetArea(unit, ability);
+                string reach = $"  R{combatManagerRef.Resolver.GetBaseRange(unit, ability)}" + (area > 0 ? $" A{area}" : string.Empty);
 
-                MenuBuilder.AddButton(abilityMenu, $"{ability.AbilityName}{cost}", () =>
+                MenuBuilder.AddButton(abilityMenu, $"{ability.AbilityName}{cost}{reach}{why}", () =>
                 {
                     CloseAbilityMenu();
                     actionController.BeginAttack(ability);
                 }, -1f, 40f, usable);
+
+                if (!string.IsNullOrEmpty(ability.Description))
+                {
+                    MenuBuilder.AddText(abilityMenu, ability.Description, 14f, TextAlignmentOptions.Left, 20f, MenuBuilder.DimTextColor);
+                }
             }
+
+            MenuBuilder.AddText(abilityMenu, "Esc / right click to close", 13f, TextAlignmentOptions.Right, 18f, MenuBuilder.DimTextColor);
 
             abilityMenu.gameObject.SetActive(true);
         }
@@ -323,7 +425,7 @@ namespace Tactica.UI
             abilityMenu.anchorMin = abilityMenu.anchorMax = new Vector2(1f, 0f);
             abilityMenu.pivot = new Vector2(1f, 0f);
             abilityMenu.anchoredPosition = new Vector2(-16f, 140f);
-            abilityMenu.sizeDelta = new Vector2(300f, 0f);
+            abilityMenu.sizeDelta = new Vector2(380f, 0f);
 
             abilityMenu.gameObject.AddComponent<Image>().color = new Color(0.02f, 0.02f, 0.06f, 0.9f);
             MenuBuilder.AddVerticalLayout(abilityMenu.gameObject, 4f, 8);

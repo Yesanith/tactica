@@ -72,6 +72,9 @@ namespace Tactica.UI
         private Transform barRoot;
         private Image hpFill;
         private Image mpFill;
+
+        // Active statuses as short tags above the bars ("BRACED  Stim 2"). Empty when none.
+        private TMPro.TextMeshProUGUI statusLabel;
         private Camera billboardCamera;
         private bool built;
 
@@ -105,10 +108,38 @@ namespace Tactica.UI
             }
         }
 
+        // Clearance above the tallest point of the unit's model, so the bars sit just over a head
+        // whatever the model's size - a scaled-up boss included.
+        private const float HeadClearance = 0.35f;
+
         private void Awake()
         {
+            FitOffsetToModel();
             EnsureBuilt();
             billboardCamera = Camera.main;
+        }
+
+        // Raises the bar to clear the unit's renderers if they reach higher than the authored
+        // offset. Never lowers it, so the capsule keeps the placement it always had. Runs in
+        // Awake, when MissionRunner has already parented the model under the unit.
+        private void FitOffsetToModel()
+        {
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+
+            if (renderers.Length == 0)
+            {
+                return;
+            }
+
+            float top = float.MinValue;
+
+            foreach (Renderer meshRenderer in renderers)
+            {
+                top = Mathf.Max(top, meshRenderer.bounds.max.y);
+            }
+
+            float height = top - transform.position.y;
+            offset.y = Mathf.Max(offset.y, height + HeadClearance);
         }
 
         // Draws immediately on subscribing, so a bar enabled after the unit's first StatsChanged
@@ -193,6 +224,11 @@ namespace Tactica.UI
             if (hpFill != null)
             {
                 hpFill.color = ColorFor(owningUnit.CurrentFaction);
+            }
+
+            if (statusLabel != null)
+            {
+                statusLabel.text = owningUnit.DescribeStatuses();
             }
         }
 
@@ -279,6 +315,7 @@ namespace Tactica.UI
 
             float hpTop = halfSpacing + BarHeight;
             CreateTurnIndicator(canvasRect, hpTop + turnIndicatorGap);
+            CreateStatusLabel(canvasRect, -halfSpacing - BarHeight - 2f);
         }
 
         // A tip-down triangle whose tip sits tipY above the canvas centre, pointing at the unit.
@@ -321,6 +358,24 @@ namespace Tactica.UI
 
             turnIndicator = root;
             turnIndicator.SetActive(false);
+        }
+
+        // Under the MP bar, so it never collides with the turn triangle above the HP bar.
+        private void CreateStatusLabel(RectTransform parent, float topY)
+        {
+            GameObject labelObject = new GameObject("Statuses", typeof(RectTransform));
+            RectTransform rect = (RectTransform)labelObject.transform;
+            rect.SetParent(parent, false);
+            rect.sizeDelta = new Vector2(CanvasWidth * 2f, 12f);
+            rect.anchoredPosition = new Vector2(0f, topY - 6f);
+
+            statusLabel = labelObject.AddComponent<TMPro.TextMeshProUGUI>();
+            statusLabel.fontSize = 9f;
+            statusLabel.alignment = TMPro.TextAlignmentOptions.Center;
+            statusLabel.color = new Color(0.4f, 1f, 1f);
+            statusLabel.raycastTarget = false;
+            statusLabel.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
+            statusLabel.text = string.Empty;
         }
 
         private static void CreateTriangle(RectTransform parent, string name, Vector2 size, Vector2 position, Color color)

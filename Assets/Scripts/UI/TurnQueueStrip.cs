@@ -27,6 +27,9 @@ namespace Tactica.UI
         private CombatManager combat;
         private RectTransform panel;
         private readonly List<TextMeshProUGUI> rows = new List<TextMeshProUGUI>();
+        private TextMeshProUGUI chargesLabel;
+
+        private static readonly Color ChargeColor = new Color(1f, 0.6f, 0.2f);
         private float nextRefresh;
 
         // The component sits on an always-active root and hides only its child panel. Hiding its
@@ -65,6 +68,9 @@ namespace Tactica.UI
                 strip.rows.Add(MenuBuilder.AddText(rect, string.Empty, 18f, TextAlignmentOptions.Left, 24f));
             }
 
+            // Charged abilities on their way, with the ticks left - the orange tiles on the board.
+            strip.chargesLabel = MenuBuilder.AddText(rect, string.Empty, 16f, TextAlignmentOptions.Left, color: ChargeColor);
+
             strip.Refresh();
             return strip;
         }
@@ -91,6 +97,16 @@ namespace Tactica.UI
             {
                 return;
             }
+
+            List<string> charges = new List<string>();
+
+            foreach (CombatManager.PendingCharge charge in combat.PendingCharges)
+            {
+                charges.Add($"CHARGING  {charge.Ability.AbilityName} ({charge.User.DisplayName})  {charge.TicksLeft}");
+            }
+
+            chargesLabel.text = string.Join("\n", charges);
+            chargesLabel.gameObject.SetActive(charges.Count > 0);
 
             for (int i = 0; i < rows.Count; i++)
             {

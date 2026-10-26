@@ -11,23 +11,34 @@ using Tactica.Grid;
 using Tactica.Stats;
 
 #if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 #endif
 
 namespace Tactica.UI
 {
-    // Every out-of-combat screen: main menu, headquarters, roster, recruitment, mission select,
-    // mission results - plus a small in-combat panel for testing factions and retreating.
+    // Every out-of-combat screen. Split into partial files by area:
+    //   CampaignMenu.cs         boot, the shared screen frame, main menu, crew, hiring, results
+    //   CampaignMenu.Map.cs     district hub, job board, briefing, travel, shop
+    //   CampaignMenu.Unit.cs    the crew member screen (card + Jobs / Equipment / Learn tabs)
+    //   CampaignMenu.Deploy.cs  placing the crew in the starting zone before the first turn
+    //   CampaignMenu.Combat.cs  starting a fight, the in-fight overlay, taking the result back
+    //   CampaignMenu.Text.cs    shared descriptions (status strip, weapons, roster rows)
     //
     // PROTOTYPE UI. Black background, grey buttons, built entirely in code by MenuBuilder, and each
     // screen is rebuilt from scratch whenever anything on it changes. That is wasteful and
     // completely fine for a handful of buttons; a real UI pass replaces this wholesale rather than
     // styling it.
     //
+    // Every screen follows the same frame, so they read as one tool: title, the status strip
+    // (district, credits, crew), the content (scrolls when it is taller than the window), any
+    // notice, then Back. Escape does what Back does. Colour carries meaning only - see
+    // MenuBuilder's SelectedColor / PrimaryColor / DangerColor.
+    //
     // Boots itself (see Bootstrap) into any scene with a CombatManager, so no scene edit is
     // needed. Drives CampaignState for the rules and MissionRunner for the board; it holds no
     // rules of its own beyond which screen is showing.
-    public class CampaignMenu : MonoBehaviour
+    public partial class CampaignMenu : MonoBehaviour
     {
         [Tooltip("Defaults to Resources/CampaignConfig.")]
         [SerializeField] private CampaignConfig config;
@@ -39,20 +50,33 @@ namespace Tactica.UI
         private const int SortingOrder = 100;
         private const float ColumnWidth = 1100f;
 
+        // Row heights, so every list on every screen lines up the same way.
+        private const float ListRowHeight = 64f;
+        private const float SmallRowHeight = 42f;
+        private const float RowButtonHeight = 44f;
+        private const float SmallButtonHeight = 36f;
+
         private CampaignState campaign;
         private MissionResult lastResult;
         private readonly HashSet<MissionUnitReport> recruitedFromResult = new HashSet<MissionUnitReport>();
 
         private RectTransform background;
         private RectTransform column;
-        private RectTransform combatBar;
-        private RectTransform unitsPanel;
-        private TextMeshProUGUI objectiveLabel;
-        private bool unitsPanelOpen;
-
+        private ScrollRect columnScroll;
         // Shown under the current screen until the next screen change. For refusals ("roster
         // full") that would otherwise only reach the console.
         private string notice;
+
+        // Where Back and Escape go from the current screen. Null on screens with no way back
+        // (main menu, the district hub).
+        private System.Action backAction;
+        private string currentBackLabel = "Back";
+
+        // Two-click confirmation for anything that cannot be undone. The first click arms the
+        // button (it turns red and says what will happen) and redraws; any other navigation
+        // disarms it, because BeginScreen moves nextConfirm into armedConfirm and clears it.
+        private string armedConfirm;
+        private string nextConfirm;
 
         // Creates the menu on entering Play mode, unless the scene already has one or opts out.
         //
@@ -147,73 +171,79 @@ namespace Tactica.UI
             ShowMainMenu();
         }
 
+        // Escape is Back on every menu screen. Not during a fight: there it belongs to the combat
+        // HUD (cancel the current command).
+        private void Update()
+        {
+#if ENABLE_INPUT_SYSTEM
+            Keyboard keyboard = Keyboard.current;
+
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            {
+                if (background.gameObject.activeSelf && backAction != null)
+                {
+                    backAction();
+                }
+                else if (missionRunner.IsDeploying)
+                {
+                    HandleDeployEscape();
+                }
+            }
+#endif
+        }
+
         // ---------------------------------------------------------------------
         // Screens
         // ---------------------------------------------------------------------
 
         private void ShowMainMenu()
         {
-            BeginScreen("TACTICA");
+            BeginScreen("TACTICA", null, showStatus: false);
             MenuBuilder.AddText(column, "NEON DISTRICT OPERATIONS  //  prototype", 24f, color: MenuBuilder.DimTextColor);
             MenuBuilder.AddSpacer(column, 24f);
 
-            MenuBuilder.AddButton(column, "New Game", () =>
+            if (CampaignState.HasSave)
+            {
+                MenuBuilder.AddButton(column, "Continue", () =>
+                {
+                    campaign = CampaignState.Load(config);
+
+                    if (campaign == null)
+                    {
+                        SetNotice("The save could not be loaded.");
+                        ShowMainMenu();
+                        return;
+                    }
+
+                    ShowHub();
+                }, color: MenuBuilder.PrimaryColor);
+            }
+
+            // A new game replaces the save, so with one on disk it asks first.
+            System.Action newGame = () =>
             {
                 campaign = CampaignState.NewGame(config);
                 campaign.Save();
                 ShowHub();
-            });
+            };
 
-            MenuBuilder.AddButton(column, "Continue", () =>
+            if (CampaignState.HasSave)
             {
-                campaign = CampaignState.Load(config);
-
-                if (campaign == null)
-                {
-                    SetNotice("The save could not be loaded.");
-                    ShowMainMenu();
-                    return;
-                }
-
-                ShowHub();
-            }, interactable: CampaignState.HasSave);
+                AddConfirmButton(column, "new-game", "New Game", "Start over? The current save is replaced", newGame, ShowMainMenu);
+            }
+            else
+            {
+                MenuBuilder.AddButton(column, "New Game", () => newGame(), color: MenuBuilder.PrimaryColor);
+            }
 
             MenuBuilder.AddButton(column, "Quit", Quit);
 
             EndScreen();
         }
 
-        private void ShowHub()
-        {
-            BeginScreen("Safehouse");
-            MenuBuilder.AddText(column,
-                $"Crew {campaign.Roster.Count}/{campaign.MaxRosterSize}   |   " +
-                $"Deployed {campaign.DeployedCount}/{campaign.MaxDeployed}   |   " +
-                $"Contracts done {campaign.MissionsWon}",
-                24f, color: MenuBuilder.DimTextColor);
-            MenuBuilder.AddSpacer(column, 24f);
-
-            MenuBuilder.AddButton(column, "Contracts", ShowMissions);
-            MenuBuilder.AddButton(column, "Crew", ShowRoster);
-            MenuBuilder.AddButton(column, "Hire Runners", ShowRecruit);
-            MenuBuilder.AddSpacer(column, 16f);
-            MenuBuilder.AddButton(column, "Save & Jack Out", () =>
-            {
-                campaign.Save();
-                ShowMainMenu();
-            });
-
-            EndScreen();
-        }
-
         private void ShowRoster()
         {
-            BeginScreen("Crew");
-            MenuBuilder.AddText(column,
-                $"{campaign.Roster.Count}/{campaign.MaxRosterSize} units   |   " +
-                $"{campaign.DeployedCount}/{campaign.MaxDeployed} deployed",
-                24f, color: MenuBuilder.DimTextColor);
-            MenuBuilder.AddSpacer(column, 8f);
+            BeginScreen("Crew", ShowHub);
 
             if (campaign.Roster.Count == 0)
             {
@@ -222,53 +252,34 @@ namespace Tactica.UI
 
             foreach (RosterUnit unit in campaign.Roster)
             {
-                RectTransform row = MenuBuilder.AddRow(column, 48f);
+                RectTransform row = MenuBuilder.AddRow(column, ListRowHeight);
                 MenuBuilder.AddText(row, DescribeRosterUnit(unit), 22f, TextAlignmentOptions.Left);
 
-                MenuBuilder.AddButton(row, unit.Deployed ? "Deployed" : "Reserve", () =>
-                {
-                    if (!campaign.ToggleDeploy(unit))
-                    {
-                        SetNotice($"At most {campaign.MaxDeployed} units can be deployed.");
-                    }
+                AddDeployToggle(row, unit, ShowRoster);
+                MenuBuilder.AddButton(row, "Manage", () => ShowUnit(unit, unit.Job), 130f, RowButtonHeight);
 
-                    SaveAndShow(ShowRoster);
-                }, 150f, 44f);
-
-                MenuBuilder.AddButton(row, "Lv -", () =>
-                {
-                    campaign.ChangeLevel(unit, -1);
-                    SaveAndShow(ShowRoster);
-                }, 80f, 44f, unit.Level > 1);
-
-                MenuBuilder.AddButton(row, "Lv +", () =>
-                {
-                    campaign.ChangeLevel(unit, +1);
-                    SaveAndShow(ShowRoster);
-                }, 80f, 44f);
-
-                MenuBuilder.AddButton(row, "Dismiss", () =>
+                // The last crew member cannot be dismissed: a crew of nobody cannot take a contract
+                // and has no money-free way back.
+                AddConfirmButton(row, "dismiss-" + unit.Name, "Dismiss", "Sure?", () =>
                 {
                     campaign.Dismiss(unit);
+                    SetNotice($"{unit.Name} left the crew.");
                     SaveAndShow(ShowRoster);
-                }, 120f, 44f);
+                }, ShowRoster, 120f, RowButtonHeight, campaign.Roster.Count > 1);
             }
-
-            MenuBuilder.AddSpacer(column, 16f);
-            MenuBuilder.AddButton(column, "Back", ShowHub);
 
             EndScreen();
         }
 
         private void ShowRecruit()
         {
-            BeginScreen("Hire Runners");
-            MenuBuilder.AddText(column,
-                campaign.HasRosterSpace
-                    ? $"Roster {campaign.Roster.Count}/{campaign.MaxRosterSize}"
-                    : $"Roster full ({campaign.MaxRosterSize}). Dismiss someone to make room.",
-                24f, color: MenuBuilder.DimTextColor);
-            MenuBuilder.AddSpacer(column, 8f);
+            BeginScreen("Hire Runners", ShowHub);
+
+            if (!campaign.HasRosterSpace)
+            {
+                MenuBuilder.AddText(column, $"Roster full ({campaign.MaxRosterSize}). Dismiss someone to make room.",
+                    22f, color: MenuBuilder.WarningTextColor);
+            }
 
             if (campaign.RecruitPool.Count == 0)
             {
@@ -277,10 +288,13 @@ namespace Tactica.UI
 
             foreach (RosterUnit candidate in campaign.RecruitPool)
             {
-                RectTransform row = MenuBuilder.AddRow(column, 48f);
+                RectTransform row = MenuBuilder.AddRow(column, ListRowHeight);
                 MenuBuilder.AddText(row, DescribeRosterUnit(candidate), 22f, TextAlignmentOptions.Left);
 
-                MenuBuilder.AddButton(row, "Hire", () =>
+                int cost = campaign.HireCost(candidate);
+                bool affordable = campaign.Credits >= cost;
+
+                MenuBuilder.AddButton(row, affordable ? $"Hire {cost} cr" : $"{cost} cr - short", () =>
                 {
                     if (campaign.Recruit(candidate))
                     {
@@ -288,79 +302,57 @@ namespace Tactica.UI
                     }
 
                     SaveAndShow(ShowRecruit);
-                }, 150f, 44f, campaign.HasRosterSpace);
+                }, 190f, RowButtonHeight, campaign.HasRosterSpace && affordable);
             }
 
-            MenuBuilder.AddSpacer(column, 16f);
+            MenuBuilder.AddSpacer(column, 8f);
             MenuBuilder.AddButton(column, "Refresh Listings", () =>
             {
                 campaign.RefreshRecruitPool();
                 SaveAndShow(ShowRecruit);
-            });
-            MenuBuilder.AddButton(column, "Back", ShowHub);
-
-            EndScreen();
-        }
-
-        private void ShowMissions()
-        {
-            BeginScreen("Contracts");
-
-            List<RosterUnit> deployed = campaign.GetDeployed();
-
-            MenuBuilder.AddText(column,
-                deployed.Count > 0
-                    ? "Deployed: " + string.Join(", ", deployed.Select(unit => $"{unit.Name} (Lv{unit.Level})"))
-                    : "Nobody is deployed. Pick runners on the Crew screen.",
-                22f, color: MenuBuilder.DimTextColor);
-            MenuBuilder.AddSpacer(column, 8f);
-
-            foreach (MissionDefinition mission in config.Missions)
-            {
-                RectTransform row = MenuBuilder.AddRow(column, 72f);
-                MenuBuilder.AddText(row,
-                    $"<b>{mission.missionName}</b>\n<size=18>{DescribeOpponents(mission)}</size>",
-                    22f, TextAlignmentOptions.Left);
-
-                MenuBuilder.AddButton(row, "Start", () => StartMission(mission), 150f, 52f, deployed.Count > 0);
-            }
-
-            MenuBuilder.AddSpacer(column, 16f);
-            MenuBuilder.AddButton(column, "Back", ShowHub);
+            }, -1f, RowButtonHeight);
 
             EndScreen();
         }
 
         private void ShowResult()
         {
-            string title = lastResult.Outcome switch
-            {
-                MissionOutcome.Victory => "Contract Complete",
-                MissionOutcome.Defeat => "Contract Failed",
-                _ => "Jacked Out",
-            };
+            bool won = lastResult.Outcome == MissionOutcome.Victory;
+            string title = lastResult.WasRoadEncounter
+                ? (won ? "Road Cleared" : lastResult.Outcome == MissionOutcome.Defeat ? "Ambush Lost" : "Turned Back")
+                : lastResult.Outcome switch
+                {
+                    MissionOutcome.Victory => lastResult.Mission.kind == MissionKind.Story ? "Story Complete" : "Contract Complete",
+                    MissionOutcome.Defeat => "Contract Failed",
+                    _ => "Jacked Out",
+                };
 
-            BeginScreen(title);
+            BeginScreen(title, ShowHub, backLabel: "Continue");
             MenuBuilder.AddText(column, lastResult.Mission.missionName, 24f, color: MenuBuilder.DimTextColor);
-            MenuBuilder.AddSpacer(column, 8f);
+            AddRewardLines();
 
-            MenuBuilder.AddText(column, "Your crew", 26f, TextAlignmentOptions.Left);
+            MenuBuilder.AddHeader(column, "Your crew");
 
             foreach (MissionUnitReport report in lastResult.Units.Where(report => report.IsFromRoster))
             {
-                string levelUp = lastResult.Outcome == MissionOutcome.Victory && !report.KnockedOut
-                    ? $"   ->  Lv{report.RosterSource.Level}"
+                // What the fight was worth: JP into the primary job (plus the quarter shared by the
+                // rest of the crew) and XP toward the next character level.
+                string shared = report.SharedJP > 0 ? $" (+{report.SharedJP} shared)" : string.Empty;
+                string levels = report.LevelsGained > 0
+                    ? $"   <color={MenuBuilder.CreditsHex}>LEVEL UP -> Lv{report.RosterSource.Level}</color>"
                     : string.Empty;
+                string gains = report.RosterSource.Locked
+                    ? "   (locked - no JP)"
+                    : $"   +{report.EarnedJP} JP{shared}   +{report.EarnedXP} XP{levels}";
 
                 // Spelled out: the crew screen simply no longer lists them, and a silent removal
                 // would read as a save bug.
                 if (report.Flatlined)
                 {
-                    levelUp = "   FLATLINED - lost for good";
+                    gains = $"   <color={MenuBuilder.DangerHex}>FLATLINED - lost for good</color>";
                 }
 
-                MenuBuilder.AddText(column,
-                    $"{report.Name}   {DescribeEnd(report)}{levelUp}",
+                MenuBuilder.AddText(column, $"<b>{report.Name}</b>   {DescribeEnd(report)}{gains}",
                     22f, TextAlignmentOptions.Left, 34f);
             }
 
@@ -368,25 +360,28 @@ namespace Tactica.UI
 
             if (others.Count > 0)
             {
-                MenuBuilder.AddSpacer(column, 8f);
-                MenuBuilder.AddText(column, "Others", 26f, TextAlignmentOptions.Left);
+                MenuBuilder.AddHeader(column, "Others");
                 MenuBuilder.AddText(column,
                     "Only units you hacked onto your side (System Override) can join the crew.",
-                    18f, TextAlignmentOptions.Left, color: MenuBuilder.DimTextColor);
+                    17f, TextAlignmentOptions.Left, color: MenuBuilder.DimTextColor);
 
                 foreach (MissionUnitReport report in others)
                 {
-                    RectTransform row = MenuBuilder.AddRow(column, 46f);
+                    RectTransform row = MenuBuilder.AddRow(column, SmallRowHeight);
                     MenuBuilder.AddText(row,
-                        $"{report.Name}  {JobNameOf(report.Job)} Lv{report.Level}   {DescribeEnd(report)}",
-                        22f, TextAlignmentOptions.Left);
+                        $"{report.Name}  <color={MenuBuilder.DimHex}>{JobNameOf(report.Job)} Lv{report.Level}</color>   {DescribeEnd(report)}",
+                        20f, TextAlignmentOptions.Left);
 
-                    bool alreadyRecruited = recruitedFromResult.Contains(report);
-                    bool canRecruit = !alreadyRecruited
-                        && campaign.HasRosterSpace
-                        && CampaignState.CanRecruitAfter(lastResult, report);
+                    bool alreadyRecruited = recruitedFromResult.Contains(report) || report.JoinedCrew;
+                    bool canRecruit = CampaignState.CanRecruitAfter(lastResult, report);
 
-                    MenuBuilder.AddButton(row, alreadyRecruited ? "Joined" : "Recruit", () =>
+                    // Only offered to those who could join; everyone else just gets the line.
+                    if (!alreadyRecruited && !canRecruit)
+                    {
+                        continue;
+                    }
+
+                    MenuBuilder.AddButton(row, alreadyRecruited ? "Joined" : campaign.HasRosterSpace ? "Recruit" : "Roster full", () =>
                     {
                         RosterUnit joined = campaign.RecruitFromMission(report);
 
@@ -397,114 +392,12 @@ namespace Tactica.UI
                         }
 
                         SaveAndShow(ShowResult);
-                    }, 150f, 42f, canRecruit);
+                    }, 160f, SmallButtonHeight, !alreadyRecruited && campaign.HasRosterSpace,
+                        alreadyRecruited ? MenuBuilder.SelectedColor : MenuBuilder.PrimaryColor);
                 }
             }
-
-            MenuBuilder.AddSpacer(column, 16f);
-            MenuBuilder.AddButton(column, "Continue", ShowHub);
 
             EndScreen();
-        }
-
-        // ---------------------------------------------------------------------
-        // Combat overlay
-        // ---------------------------------------------------------------------
-
-        private void StartMission(MissionDefinition mission)
-        {
-            if (!missionRunner.StartMission(mission, campaign.GetDeployed(), out string error))
-            {
-                SetNotice(error);
-                ShowMissions();
-                return;
-            }
-
-            notice = null;
-            unitsPanelOpen = false;
-
-            background.gameObject.SetActive(false);
-            combatBar.gameObject.SetActive(true);
-            objectiveLabel.text = "OBJECTIVE: " + mission.DescribeObjective();
-            RefreshUnitsPanel();
-        }
-
-        private void HandleMissionFinished(MissionResult result)
-        {
-            lastResult = result;
-            recruitedFromResult.Clear();
-
-            campaign.ApplyResult(result);
-            campaign.Save();
-
-            combatBar.gameObject.SetActive(false);
-            ShowResult();
-        }
-
-        private void HandleActiveUnitChanged(GridUnit unit)
-        {
-            RefreshUnitsPanel();
-        }
-
-        // Every unit in the encounter with a button that cycles its faction. The faction test bench:
-        // convert the last enemy and the fight should end as a win on the spot.
-        private void RefreshUnitsPanel()
-        {
-            if (unitsPanel == null)
-            {
-                return;
-            }
-
-            unitsPanel.gameObject.SetActive(unitsPanelOpen && missionRunner.IsRunning);
-
-            if (!unitsPanel.gameObject.activeSelf)
-            {
-                return;
-            }
-
-            MenuBuilder.Clear(unitsPanel);
-
-            MenuBuilder.AddText(unitsPanel, "Units  (click a side to change it)", 20f, TextAlignmentOptions.Left, 30f);
-
-            GridUnit active = missionRunner.Combat != null ? missionRunner.Combat.GetActiveUnit() : null;
-
-            foreach (GridUnit unit in missionRunner.SpawnedUnits)
-            {
-                if (unit == null)
-                {
-                    continue;
-                }
-
-                RectTransform row = MenuBuilder.AddRow(unitsPanel, 38f, 6f);
-
-                string marker = unit == active ? "> " : string.Empty;
-                string status = unit.IsFlatlined
-                    ? "FLATLINED"
-                    : unit.IsKnockedOut
-                        ? $"KO (flatline {unit.FlatlineCounter})"
-                        : $"{unit.CurrentStats.HP}/{unit.EffectiveStats.MaxHP}";
-
-                MenuBuilder.AddText(row, $"{marker}{unit.DisplayName} Lv{unit.Level}  {status}", 18f, TextAlignmentOptions.Left);
-                MenuBuilder.AddButton(row, unit.CurrentFaction.ToString(), () => CycleFaction(unit), 110f, 34f);
-            }
-        }
-
-        private void CycleFaction(GridUnit unit)
-        {
-            Faction next = unit.CurrentFaction switch
-            {
-                Faction.Player => Faction.Enemy,
-                Faction.Enemy => Faction.Neutral,
-                _ => Faction.Player,
-            };
-
-            unit.SetFaction(next);
-
-            // A side can now be empty. Checked here because no attack happened to check it -
-            // exactly the case CombatManager's turn-boundary check comment anticipates.
-            missionRunner.Combat.TryEndCombatNow();
-
-            RefreshUnitsPanel();
         }
 
         // ---------------------------------------------------------------------
@@ -516,56 +409,92 @@ namespace Tactica.UI
             Canvas canvas = MenuBuilder.CreateOverlayCanvas("CampaignCanvas", transform, SortingOrder);
 
             background = MenuBuilder.CreateFullScreenPanel(canvas.transform, "Background", Color.black);
-            column = MenuBuilder.CreateColumn(background, "Column", ColumnWidth, 12f);
+            column = MenuBuilder.CreateScrollColumn(background, "Column", ColumnWidth, 12f, out columnScroll);
 
-            // Top-right, outside the background so it stays up while the board is visible. Only
-            // these rects take raycasts, so the rest of the board stays clickable.
-            combatBar = MenuBuilder.CreateRect(canvas.transform, "CombatBar");
-            combatBar.anchorMin = combatBar.anchorMax = new Vector2(1f, 1f);
-            combatBar.pivot = new Vector2(1f, 1f);
-            combatBar.anchoredPosition = new Vector2(-16f, -16f);
-            combatBar.sizeDelta = new Vector2(480f, 0f);
-            MenuBuilder.AddVerticalLayout(combatBar.gameObject, 8f);
-            combatBar.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-            RectTransform buttons = MenuBuilder.AddRow(combatBar, 44f);
-            MenuBuilder.AddButton(buttons, "Units / Factions", () =>
-            {
-                unitsPanelOpen = !unitsPanelOpen;
-                RefreshUnitsPanel();
-            }, -1f, 44f);
-            MenuBuilder.AddButton(buttons, "Jack Out", () => missionRunner.Retreat(), 140f, 44f);
-
-            // The contract's objective stays on screen for the whole fight - a "keep X alive" that
-            // is only shown on the briefing gets forgotten by turn three.
-            objectiveLabel = MenuBuilder.AddText(combatBar, string.Empty, 20f, TextAlignmentOptions.Right, 28f,
-                new Color(0.3f, 0.95f, 0.95f));
-
-            unitsPanel = MenuBuilder.CreateRect(combatBar, "UnitsPanel");
-            unitsPanel.gameObject.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.8f);
-            MenuBuilder.AddVerticalLayout(unitsPanel.gameObject, 4f, 10);
-
-            combatBar.gameObject.SetActive(false);
-            unitsPanel.gameObject.SetActive(false);
+            BuildCombatBar(canvas);
+            BuildDeployPanel(canvas);
         }
 
-        private void BeginScreen(string title)
+        // The common frame of every screen. back: where Back and Escape go (null for none);
+        // backLabel renames the button when "Back" is the wrong word (the result screen's
+        // Continue). showStatus puts the campaign strip under the title. width widens the column
+        // for screens laid out side by side (the unit screen); everything else uses ColumnWidth.
+        private void BeginScreen(string title, System.Action back, bool showStatus = true, string backLabel = "Back",
+            float width = ColumnWidth)
         {
             background.gameObject.SetActive(true);
             MenuBuilder.Clear(column);
-            MenuBuilder.AddText(column, title, 56f, height: 80f);
+            column.sizeDelta = new Vector2(width, column.sizeDelta.y);
+            columnScroll.verticalNormalizedPosition = 1f;
+            column.anchoredPosition = Vector2.zero;
+
+            backAction = back;
+            currentBackLabel = backLabel;
+            armedConfirm = nextConfirm;
+            nextConfirm = null;
+
+            MenuBuilder.AddText(column, title, 56f, height: 72f);
+
+            if (showStatus && campaign != null)
+            {
+                MenuBuilder.AddText(column, DescribeStatusStrip(), 20f, height: 30f, color: MenuBuilder.DimTextColor);
+            }
+
+            MenuBuilder.AddSpacer(column, 8f);
         }
 
         private void EndScreen()
         {
-            if (string.IsNullOrEmpty(notice))
+            if (!string.IsNullOrEmpty(notice))
             {
-                return;
+                MenuBuilder.AddSpacer(column, 4f);
+                MenuBuilder.AddText(column, notice, 22f, color: MenuBuilder.WarningTextColor);
+                notice = null;
             }
 
-            MenuBuilder.AddSpacer(column, 8f);
-            MenuBuilder.AddText(column, notice, 22f, color: new Color(1f, 0.8f, 0.35f));
-            notice = null;
+            if (backAction != null)
+            {
+                System.Action back = backAction;
+                MenuBuilder.AddSpacer(column, 12f);
+                MenuBuilder.AddButton(column, $"{currentBackLabel}   <size=16><color={MenuBuilder.DimHex}>[Esc]</color></size>", () => back());
+            }
+
+            MenuBuilder.SettleScroll(columnScroll);
+        }
+
+        // A button that needs two clicks. redraw rebuilds the current screen so the armed state
+        // shows; any other click elsewhere disarms it (see armedConfirm).
+        private void AddConfirmButton(
+            Transform parent, string key, string label, string confirmLabel, System.Action action, System.Action redraw,
+            float width = -1f, float height = 52f, bool interactable = true)
+        {
+            bool armed = armedConfirm == key;
+
+            MenuBuilder.AddButton(parent, armed ? confirmLabel : label, () =>
+            {
+                if (!armed)
+                {
+                    nextConfirm = key;
+                    redraw();
+                    return;
+                }
+
+                action();
+            }, width, height, interactable, armed ? MenuBuilder.DangerColor : (Color?)null);
+        }
+
+        // On (teal) when deployed. The same control on the crew list and the briefing.
+        private void AddDeployToggle(RectTransform row, RosterUnit unit, System.Action redraw)
+        {
+            MenuBuilder.AddButton(row, unit.Deployed ? "Deployed" : "Reserve", () =>
+            {
+                if (!campaign.ToggleDeploy(unit))
+                {
+                    SetNotice($"At most {campaign.MaxDeployed} units can be deployed.");
+                }
+
+                SaveAndShow(redraw);
+            }, 150f, RowButtonHeight, color: MenuBuilder.On(unit.Deployed));
         }
 
         private void SetNotice(string message)
@@ -606,44 +535,5 @@ namespace Tactica.UI
 #endif
         }
 
-        // ---------------------------------------------------------------------
-        // Text
-        // ---------------------------------------------------------------------
-
-        private static string DescribeRosterUnit(RosterUnit unit)
-        {
-            CharacterStats stats = unit.Stats;
-            return $"<b>{unit.Name}</b>  {unit.JobName} Lv{unit.Level}   " +
-                   $"<size=18>HP {stats.MaxHP}  MP {stats.MaxMP}  STR {stats.Strength}  " +
-                   $"DEF {stats.Defense}  SPD {stats.Speed}  MOV {stats.Move}</size>";
-        }
-
-        private static string DescribeOpponents(MissionDefinition mission)
-        {
-            StringBuilder builder = new StringBuilder();
-            builder.Append(mission.DescribeObjective().ToUpperInvariant()).Append("  -  ");
-
-            if (!string.IsNullOrEmpty(mission.description))
-            {
-                builder.Append(mission.description).Append("  -  ");
-            }
-
-            builder.Append(string.Join(", ", mission.opponents.Select(entry =>
-                $"{(string.IsNullOrEmpty(entry.unitName) ? JobNameOf(entry.job) : entry.unitName)} " +
-                $"Lv{entry.level} ({entry.faction})")));
-
-            return builder.ToString();
-        }
-
-        private static string DescribeEnd(MissionUnitReport report)
-        {
-            string state = report.Flatlined ? ", FLATLINED" : report.KnockedOut ? ", KO" : string.Empty;
-            return $"[{report.FinalFaction}{state}]";
-        }
-
-        private static string JobNameOf(JobDefinition job)
-        {
-            return job != null ? job.JobName : "(no job)";
-        }
     }
 }

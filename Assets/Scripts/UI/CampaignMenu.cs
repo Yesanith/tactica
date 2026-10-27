@@ -171,14 +171,39 @@ namespace Tactica.UI
             ShowMainMenu();
         }
 
-        // Escape is Back on every menu screen. Not during a fight: there it belongs to the combat
-        // HUD (cancel the current command).
+        // Escape (or B on the pad) is Back on every menu screen. Not during a fight: there it
+        // belongs to the combat HUD (cancel the current command). While deploying, the board has
+        // the pad - A picks and places on the cursor's tile - and Start begins the battle.
         private void Update()
         {
+            // Menus take the pad's focus; in a fight or while deploying the board has it, so a
+            // button clicked with the mouse must not stay selected.
+            if (background.gameObject.activeSelf)
+            {
+                PadFocus.Keep(column, currentScreen);
+                HandleMenuShortcuts();
+            }
+            else
+            {
+                PadFocus.Release(background.parent);
+
+                if (missionRunner.IsDeploying)
+                {
+                    PromptBar.Set(PromptBar.Join(PromptBar.A, "Pick / place", PromptBar.B, "Drop pick",
+                        PromptBar.Glyph("Start"), "Begin", PromptBar.Glyph("LB/RB"), "Turn camera"));
+                }
+                else if (combatBar.gameObject.activeSelf && GridInput.WasPadPressed(GridInput.PadButton.View) && jackOutButton != null)
+                {
+                    // Pressed twice, like the button: the first press arms it.
+                    jackOutButton.onClick.Invoke();
+                }
+            }
+
 #if ENABLE_INPUT_SYSTEM
             Keyboard keyboard = Keyboard.current;
+            bool back = (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) || GridInput.WasPadPressed(GridInput.PadButton.Cancel);
 
-            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
+            if (back)
             {
                 if (background.gameObject.activeSelf && backAction != null)
                 {
@@ -188,6 +213,10 @@ namespace Tactica.UI
                 {
                     HandleDeployEscape();
                 }
+            }
+            else if (missionRunner.IsDeploying && !background.gameObject.activeSelf && GridInput.WasPadPressed(GridInput.PadButton.Wait))
+            {
+                StartBattle();
             }
 #endif
         }
@@ -420,6 +449,37 @@ namespace Tactica.UI
         // backLabel renames the button when "Back" is the wrong word (the result screen's
         // Continue). showStatus puts the campaign strip under the title. width widens the column
         // for screens laid out side by side (the unit screen); everything else uses ColumnWidth.
+        // The title of the screen on show - the pad's focus keeps its place only within one.
+        private string currentScreen;
+
+        // A screen's pad shortcuts, set after BeginScreen and cleared by it: the shoulders page
+        // (the crew screen flips between members), the triggers switch tabs. -1 back, +1 forward.
+        private System.Action<int> pageAction;
+        private string pageLabel;
+        private System.Action<int> tabAction;
+
+        // The shoulders and triggers on a menu screen, and the strip saying what the pad does here.
+        private void HandleMenuShortcuts()
+        {
+            if (pageAction != null)
+            {
+                if (GridInput.WasPadPressed(GridInput.PadButton.ShoulderLeft)) pageAction(-1);
+                else if (GridInput.WasPadPressed(GridInput.PadButton.ShoulderRight)) pageAction(1);
+            }
+
+            if (tabAction != null)
+            {
+                if (GridInput.WasPadPressed(GridInput.PadButton.TriggerLeft)) tabAction(-1);
+                else if (GridInput.WasPadPressed(GridInput.PadButton.TriggerRight)) tabAction(1);
+            }
+
+            PromptBar.Set(PromptBar.Join(
+                PromptBar.A, "Select",
+                backAction != null ? PromptBar.B : null, currentBackLabel,
+                pageAction != null ? PromptBar.Glyph("LB/RB") : null, pageLabel,
+                tabAction != null ? PromptBar.Glyph("LT/RT") : null, "Tab"));
+        }
+
         private void BeginScreen(string title, System.Action back, bool showStatus = true, string backLabel = "Back",
             float width = ColumnWidth)
         {
@@ -431,10 +491,14 @@ namespace Tactica.UI
 
             backAction = back;
             currentBackLabel = backLabel;
+            pageAction = null;
+            pageLabel = null;
+            tabAction = null;
             armedConfirm = nextConfirm;
             nextConfirm = null;
 
             MenuBuilder.AddTitle(column, title);
+            currentScreen = title;
 
             if (showStatus && campaign != null)
             {

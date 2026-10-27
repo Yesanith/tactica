@@ -83,7 +83,7 @@ namespace Tactica.UI
         private const float CommandSpacing = 8f;
 
         // The prefab's panels were placed by hand flush against the screen edges. Bottom-left: the
-        // acting unit, then the target beside it. Bottom-right: Act / Move / Wait stacked, with
+        // acting unit, the target above it. Bottom-right: Act / Move / Wait stacked, with
         // the ability menu opening above them.
         private void LayOutAuthoredPanels()
         {
@@ -93,9 +93,11 @@ namespace Tactica.UI
                 activeUnitPanel.ApplyLayout();
             }
 
+            // Above the acting unit rather than beside it, which keeps the bottom centre free for
+            // the pad's prompt strip.
             if (targetUnitPanel != null)
             {
-                AnchorBottom((RectTransform)targetUnitPanel.transform, 0f, new Vector2(Margin * 2f + UnitInfoPanel.Width, Margin));
+                AnchorBottom((RectTransform)targetUnitPanel.transform, 0f, new Vector2(Margin, Margin * 2f + UnitInfoPanel.Height));
                 targetUnitPanel.ApplyLayout();
             }
 
@@ -162,6 +164,8 @@ namespace Tactica.UI
             RefreshCommandButtons();
             HandleHotkeys();
 
+            UpdatePadFocus();
+
             if (previewLabel == null)
             {
                 return;
@@ -171,7 +175,9 @@ namespace Tactica.UI
 
             if (actionController != null && actionController.Mode == PlayerActionMode.ChoosingFacing)
             {
-                preview = "Choose facing: click a lit tile, or press Wait again to keep it";
+                preview = GridInput.GamepadActive
+                    ? "Choose facing: A on a lit tile, or Start again to keep it"
+                    : "Choose facing: click a lit tile, or press Wait again to keep it";
             }
             else if (actionController != null && cursor != null && cursor.HoveredTile.HasValue)
             {
@@ -181,11 +187,14 @@ namespace Tactica.UI
             // With nothing hovered, say what the board is waiting for.
             if (string.IsNullOrEmpty(preview) && actionController != null && actionController.Mode == PlayerActionMode.Moving)
             {
-                preview = "Move: click a lit tile   (Esc / right click to cancel)";
+                preview = GridInput.GamepadActive
+                    ? "Move: A on a lit tile   (B to cancel)"
+                    : "Move: click a lit tile   (Esc / right click to cancel)";
             }
             else if (string.IsNullOrEmpty(preview) && actionController != null && actionController.PendingAbility != null)
             {
-                preview = $"{actionController.PendingAbility.AbilityName}: pick a target   (Esc / right click to cancel)";
+                preview = $"{actionController.PendingAbility.AbilityName}: pick a target   " +
+                          (GridInput.GamepadActive ? "(B to cancel)" : "(Esc / right click to cancel)");
             }
 
             previewLabel.transform.parent.gameObject.SetActive(!string.IsNullOrEmpty(preview));
@@ -306,8 +315,84 @@ namespace Tactica.UI
             SetTurnIndicator(unit);
             CloseAbilityMenu();
 
+            // The pad's cursor starts each of the crew's turns on whoever is acting.
+            if (unit != null && unit.IsPlayerControlled && cursor != null)
+            {
+                cursor.MoveCursorTo(unit.GridCoords);
+            }
+
             // A new turn means the previous turn's target is no longer meaningful.
             HideTargetPanel();
+        }
+
+        // FFT's flow on the pad: on the crew's turn the command list (Act / Move / Wait) has the
+        // focus; choosing a command hands the stick to the board, and finishing or cancelling it
+        // hands it back. B on the list lets go to look around the board; A or B there returns.
+        // Everything else selected in the HUD was clicked with the mouse, and left selected it
+        // would keep the board from getting the pad.
+        private bool lookingAround;
+
+        // Whether the command list had the pad last frame, to notice it taking it back.
+        private bool commandsFocused;
+
+        private RectTransform CommandList => attackButton != null ? attackButton.transform.parent as RectTransform : null;
+
+        private bool ChoosingCommand
+        {
+            get
+            {
+                GridUnit unit = combatManagerRef != null ? combatManagerRef.GetActiveUnit() : null;
+                return unit != null && unit.IsPlayerControlled && combatManagerRef.CurrentState == CombatState.WaitingForInput
+                       && actionController != null && actionController.Mode == PlayerActionMode.None;
+            }
+        }
+
+        private void UpdatePadFocus()
+        {
+            bool menuOpen = abilityMenu != null && abilityMenu.gameObject.activeSelf;
+            bool choosing = ChoosingCommand;
+
+            if (!choosing)
+            {
+                lookingAround = false;
+            }
+
+            if (menuOpen)
+            {
+                PadFocus.Keep(abilityMenu);
+                PromptBar.Set(PromptBar.Join(PromptBar.A, "Use", PromptBar.B, "Back"));
+                return;
+            }
+
+            bool focusCommands = choosing && !lookingAround && GridInput.GamepadActive && CommandList != null;
+
+            // Back on the command list - after looking around, a move or a cancelled command -
+            // the cursor returns to whoever is acting, as in FFT.
+            if (focusCommands && !commandsFocused && cursor != null)
+            {
+                cursor.MoveCursorTo(combatManagerRef.GetActiveUnit().GridCoords);
+            }
+
+            commandsFocused = focusCommands;
+
+            if (focusCommands)
+            {
+                PadFocus.Keep(CommandList);
+                PromptBar.Set(PromptBar.Join(PromptBar.A, "Choose", PromptBar.B, "Look around",
+                    PromptBar.Y, "Act", PromptBar.X, "Move", PromptBar.Glyph("Start"), "Wait"));
+                return;
+            }
+
+            PadFocus.Release(transform);
+            PlayerActionMode mode = actionController != null ? actionController.Mode : PlayerActionMode.None;
+
+            string prompt = lookingAround ? PromptBar.Join(PromptBar.A, "Commands", PromptBar.B, "Commands", PromptBar.Glyph("LB/RB"), "Turn camera")
+                : mode == PlayerActionMode.Moving ? PromptBar.Join(PromptBar.A, "Move here", PromptBar.B, "Cancel")
+                : mode == PlayerActionMode.Targeting ? PromptBar.Join(PromptBar.A, "Target", PromptBar.B, "Cancel")
+                : mode == PlayerActionMode.ChoosingFacing ? PromptBar.Join(PromptBar.A, "Face this way", PromptBar.Glyph("Start"), "Keep facing")
+                : PromptBar.Join(PromptBar.Glyph("LB/RB"), "Turn camera", PromptBar.Glyph("View"), "Jack Out");
+
+            PromptBar.Set(prompt);
         }
 
         // Polled: acting and moving have no event of their own. Grey on anyone else's turn (the
@@ -333,7 +418,10 @@ namespace Tactica.UI
             Mouse mouse = Mouse.current;
 
             bool cancel = (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
-                || (mouse != null && mouse.rightButton.wasPressedThisFrame);
+                || (mouse != null && mouse.rightButton.wasPressedThisFrame)
+                || GridInput.WasPadPressed(GridInput.PadButton.Cancel);
+
+            bool padCancel = GridInput.WasPadPressed(GridInput.PadButton.Cancel);
 
             if (cancel)
             {
@@ -341,20 +429,28 @@ namespace Tactica.UI
                 {
                     CloseAbilityMenu();
                 }
+                else if (padCancel && ChoosingCommand)
+                {
+                    lookingAround = !lookingAround;
+                }
                 else if (actionController != null)
                 {
                     actionController.CancelCommand();
                 }
             }
-
-            if (keyboard == null)
+            else if (lookingAround && GridInput.WasPadPressed(GridInput.PadButton.Confirm))
             {
-                return;
+                lookingAround = false;
             }
 
-            if (keyboard.digit1Key.wasPressedThisFrame && attackButton != null && attackButton.interactable) OnAttackPressed();
-            if (keyboard.digit2Key.wasPressedThisFrame && moveButton != null && moveButton.interactable) OnMovePressed();
-            if (keyboard.digit3Key.wasPressedThisFrame && waitButton != null && waitButton.interactable) OnWaitPressed();
+            // Keys 1-3, or Y / X / Start on the pad.
+            bool act = (keyboard != null && keyboard.digit1Key.wasPressedThisFrame) || GridInput.WasPadPressed(GridInput.PadButton.Act);
+            bool move = (keyboard != null && keyboard.digit2Key.wasPressedThisFrame) || GridInput.WasPadPressed(GridInput.PadButton.Move);
+            bool wait = (keyboard != null && keyboard.digit3Key.wasPressedThisFrame) || GridInput.WasPadPressed(GridInput.PadButton.Wait);
+
+            if (act && attackButton != null && attackButton.interactable) OnAttackPressed();
+            if (move && moveButton != null && moveButton.interactable) OnMovePressed();
+            if (wait && waitButton != null && waitButton.interactable) OnWaitPressed();
 #endif
         }
 
@@ -458,7 +554,8 @@ namespace Tactica.UI
                 }
             }
 
-            MenuBuilder.AddText(abilityMenu, "Esc / right click to close", 13f, TextAlignmentOptions.Right, 18f, MenuBuilder.DimTextColor);
+            MenuBuilder.AddText(abilityMenu, GridInput.GamepadActive ? "B to close" : "Esc / right click to close", 13f,
+                TextAlignmentOptions.Right, 18f, MenuBuilder.DimTextColor);
 
             abilityMenu.gameObject.SetActive(true);
         }
@@ -467,6 +564,7 @@ namespace Tactica.UI
         {
             if (abilityMenu != null)
             {
+                PadFocus.Release(abilityMenu);
                 abilityMenu.gameObject.SetActive(false);
             }
         }

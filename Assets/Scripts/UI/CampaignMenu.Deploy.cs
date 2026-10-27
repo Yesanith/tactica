@@ -51,12 +51,19 @@ namespace Tactica.UI
                 deployCursor = FindAnyObjectByType<GridCursorHighlighter>();
             }
 
+            GridUnit first = missionRunner.Crew.FirstOrDefault();
+
             if (deployCursor != null)
             {
                 deployCursor.TileClicked += HandleDeployClick;
+
+                if (first != null)
+                {
+                    deployCursor.MoveCursorTo(first.GridCoords);
+                }
             }
 
-            SelectForDeployment(missionRunner.Crew.FirstOrDefault());
+            SelectForDeployment(first);
         }
 
         private void EndDeployment()
@@ -137,7 +144,9 @@ namespace Tactica.UI
             MenuBuilder.Clear(deployPanel);
             MenuBuilder.AddText(deployPanel, "DEPLOYMENT", 24f, TextAlignmentOptions.Left, 32f, MenuBuilder.AccentTextColor);
             MenuBuilder.AddText(deployPanel,
-                "Pick a crew member, then a teal tile.  Esc drops the pick.",
+                GridInput.GamepadActive
+                    ? "A on a crew member, then A on a teal tile.  B drops the pick, Start begins."
+                    : "Pick a crew member, then a teal tile.  Esc drops the pick.",
                 17f, TextAlignmentOptions.Left, 24f, MenuBuilder.DimTextColor);
             MenuBuilder.AddText(deployPanel, "Objective: " + deployMission.DescribeObjective(), 17f,
                 TextAlignmentOptions.Left, 24f, MenuBuilder.AccentTextColor);

@@ -163,6 +163,9 @@ namespace Tactica.UI
 
         // The combat bar is built once, not per screen, so its confirm cannot use the screen-level
         // arming; it relabels itself instead and disarms after a few seconds.
+        // Kept so the pad's View button can press it.
+        private Button jackOutButton;
+
         private void AddCombatJackOut(RectTransform parent)
         {
             Button button = null;
@@ -185,6 +188,8 @@ namespace Tactica.UI
                 NeonTheme.SetButtonKind(button, NeonTheme.ButtonKind.Plain);
                 missionRunner.Retreat();
             }, 160f, 44f);
+
+            jackOutButton = button;
         }
     }
 }

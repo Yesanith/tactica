@@ -253,13 +253,13 @@ namespace Tactica.UI
             }
 
             // The fill lives in the ColorBlock, not on the Image, so hover and press tint it the
-            // same way for every kind. A disabled "on" button keeps its colour (a current job is on,
+            // same way for every kind. Selected is the gamepad's focus, so it has to show. A disabled "on" button keeps its colour (a current job is on,
             // not greyed out); a disabled plain one fades.
             button.image.color = Color.white;
             ColorBlock colors = button.colors;
             colors.normalColor = fill;
             colors.highlightedColor = Color.Lerp(fill, edge, 0.35f);
-            colors.selectedColor = fill;
+            colors.selectedColor = Color.Lerp(fill, edge, 0.45f);
             colors.pressedColor = Color.Lerp(fill, edge, 0.6f);
             colors.disabledColor = kind == ButtonKind.Plain ? new Color(fill.r, fill.g, fill.b, 0.45f) : fill;
             colors.colorMultiplier = 1f;

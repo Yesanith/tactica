@@ -45,7 +45,20 @@ namespace Tactica.UI
             System.Action redraw = () => ShowUnit(unit, viewJob);
             BeginScreen(unit.Name, ShowRoster, width: UnitScreenWidth);
 
+            // Each tab is its own page as far as the pad's focus is concerned.
+            currentScreen = unit.Name + "/" + unitTab;
+
             AddCrewNavigation(unit);
+
+            if (!unit.Locked)
+            {
+                tabAction = direction =>
+                {
+                    int count = System.Enum.GetValues(typeof(UnitTab)).Length;
+                    unitTab = (UnitTab)(((int)unitTab + direction + count) % count);
+                    ShowUnit(unit, viewJob);
+                };
+            }
 
             RectTransform body = MenuBuilder.AddRow(column, UnitBodyHeight, 16f);
             AddUnitCard(body, unit);
@@ -92,9 +105,14 @@ namespace Tactica.UI
             RectTransform nav = MenuBuilder.AddRow(column, SmallButtonHeight);
             RosterUnit previous = campaign.Roster[(index - 1 + count) % count];
             RosterUnit next = campaign.Roster[(index + 1) % count];
-            MenuBuilder.AddButton(nav, "< " + previous.Name, () => ShowUnit(previous, previous.Job), 240f, SmallButtonHeight);
+
+            // On the pad these are LB / RB, so the stick goes straight to the screen's content.
+            PadFocus.SkipPadFocus(MenuBuilder.AddButton(nav, "< " + previous.Name, () => ShowUnit(previous, previous.Job), 240f, SmallButtonHeight));
             MenuBuilder.AddText(nav, $"{index + 1} / {count}", 18f, color: MenuBuilder.DimTextColor);
-            MenuBuilder.AddButton(nav, next.Name + " >", () => ShowUnit(next, next.Job), 240f, SmallButtonHeight);
+            PadFocus.SkipPadFocus(MenuBuilder.AddButton(nav, next.Name + " >", () => ShowUnit(next, next.Job), 240f, SmallButtonHeight));
+
+            pageAction = direction => ShowUnit(direction < 0 ? previous : next, (direction < 0 ? previous : next).Job);
+            pageLabel = "Crew";
         }
 
         // The left card: read-only, always visible.
@@ -156,11 +174,12 @@ namespace Tactica.UI
 
         private void AddTabButton(RectTransform tabs, string label, UnitTab tab, RosterUnit unit, JobDefinition viewJob)
         {
-            MenuBuilder.AddButton(tabs, label, () =>
+            // LT / RT on the pad.
+            PadFocus.SkipPadFocus(MenuBuilder.AddButton(tabs, label, () =>
             {
                 unitTab = tab;
                 ShowUnit(unit, viewJob);
-            }, -1f, RowButtonHeight, color: MenuBuilder.On(unitTab == tab));
+            }, -1f, RowButtonHeight, color: MenuBuilder.On(unitTab == tab)));
         }
 
         // ---------------------------------------------------------------------

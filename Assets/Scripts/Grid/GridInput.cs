@@ -110,5 +110,182 @@ namespace Tactica.Grid
             return false;
 #endif
         }
+
+        // ---------------------------------------------------------------------
+        // Gamepad
+        // ---------------------------------------------------------------------
+
+        // What a pad button means, so callers never name physical buttons. Xbox layout: A confirm,
+        // B cancel, Y Act, X Move, Start Wait (or "begin" where there is no turn), View the fight's
+        // own menu (Jack Out). The shoulders turn the camera on the board and page through the crew
+        // in menus; the triggers switch tabs.
+        public enum PadButton
+        {
+            Confirm,
+            Cancel,
+            Act,
+            Move,
+            Wait,
+            View,
+            ShoulderLeft,
+            ShoulderRight,
+            TriggerLeft,
+            TriggerRight,
+        }
+
+        private const float StickThreshold = 0.5f;
+        private const float MouseMoveThreshold = 3f;
+        private const float RepeatDelay = 0.32f;
+        private const float RepeatInterval = 0.11f;
+
+        private static int deviceFrame = -1;
+        private static bool gamepadActive;
+
+        private static int stepFrame = -1;
+        private static Vector2Int stepThisFrame;
+        private static Vector2Int heldDirection;
+        private static float nextRepeat;
+
+        // Whichever of pad and mouse was touched last: the pad drives a tile cursor and focuses
+        // menus, the mouse points. Switching is automatic - a pad press takes over, moving or
+        // clicking the mouse hands it back. Computed once per frame, so every caller agrees.
+        public static bool GamepadActive
+        {
+            get
+            {
+                RefreshActiveDevice();
+                return gamepadActive;
+            }
+        }
+
+        private static void RefreshActiveDevice()
+        {
+            if (deviceFrame == Time.frameCount)
+            {
+                return;
+            }
+
+            deviceFrame = Time.frameCount;
+#if ENABLE_INPUT_SYSTEM
+            Gamepad pad = Gamepad.current;
+
+            if (pad != null && PadTouchedThisFrame(pad))
+            {
+                gamepadActive = true;
+            }
+
+            Mouse mouse = Mouse.current;
+
+            if (mouse != null && (mouse.delta.ReadValue().sqrMagnitude > MouseMoveThreshold * MouseMoveThreshold
+                                  || mouse.leftButton.wasPressedThisFrame || mouse.rightButton.wasPressedThisFrame))
+            {
+                gamepadActive = false;
+            }
+#endif
+        }
+
+#if ENABLE_INPUT_SYSTEM
+        // Every button, and every stick or d-pad direction (they are buttons too, pressed at half
+        // travel), so nudging a stick counts as picking the pad up.
+        private static bool PadTouchedThisFrame(Gamepad pad)
+        {
+            foreach (InputControl control in pad.allControls)
+            {
+                if (control is UnityEngine.InputSystem.Controls.ButtonControl button && button.wasPressedThisFrame)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+#endif
+
+        public static bool WasPadPressed(PadButton button)
+        {
+#if ENABLE_INPUT_SYSTEM
+            Gamepad pad = Gamepad.current;
+
+            if (pad == null)
+            {
+                return false;
+            }
+
+            switch (button)
+            {
+                case PadButton.Confirm: return pad.buttonSouth.wasPressedThisFrame;
+                case PadButton.Cancel: return pad.buttonEast.wasPressedThisFrame;
+                case PadButton.Act: return pad.buttonNorth.wasPressedThisFrame;
+                case PadButton.Move: return pad.buttonWest.wasPressedThisFrame;
+                case PadButton.Wait: return pad.startButton.wasPressedThisFrame;
+                case PadButton.View: return pad.selectButton.wasPressedThisFrame;
+                case PadButton.ShoulderLeft: return pad.leftShoulder.wasPressedThisFrame;
+                case PadButton.ShoulderRight: return pad.rightShoulder.wasPressedThisFrame;
+                case PadButton.TriggerLeft: return pad.leftTrigger.wasPressedThisFrame;
+                case PadButton.TriggerRight: return pad.rightTrigger.wasPressedThisFrame;
+            }
+#endif
+            return false;
+        }
+
+        // One step of the tile cursor in screen terms (x right, y up), from the d-pad or the left
+        // stick: a step on the press, then after a pause a step every RepeatInterval while held -
+        // a menu's key repeat, so crossing the board does not take twenty presses.
+        public static Vector2Int GetCursorStep()
+        {
+            if (stepFrame == Time.frameCount)
+            {
+                return stepThisFrame;
+            }
+
+            stepFrame = Time.frameCount;
+            stepThisFrame = Vector2Int.zero;
+#if ENABLE_INPUT_SYSTEM
+            Gamepad pad = Gamepad.current;
+
+            if (pad == null)
+            {
+                return stepThisFrame;
+            }
+
+            Vector2 raw = pad.dpad.ReadValue() + pad.leftStick.ReadValue();
+            Vector2Int direction = Vector2Int.zero;
+
+            if (raw.magnitude >= StickThreshold)
+            {
+                direction = Mathf.Abs(raw.x) > Mathf.Abs(raw.y)
+                    ? new Vector2Int(raw.x > 0f ? 1 : -1, 0)
+                    : new Vector2Int(0, raw.y > 0f ? 1 : -1);
+            }
+
+            if (direction == Vector2Int.zero)
+            {
+                heldDirection = Vector2Int.zero;
+                return stepThisFrame;
+            }
+
+            if (direction != heldDirection)
+            {
+                heldDirection = direction;
+                nextRepeat = Time.unscaledTime + RepeatDelay;
+                stepThisFrame = direction;
+            }
+            else if (Time.unscaledTime >= nextRepeat)
+            {
+                nextRepeat = Time.unscaledTime + RepeatInterval;
+                stepThisFrame = direction;
+            }
+#endif
+            return stepThisFrame;
+        }
+
+        // Whether a menu holds the pad's focus. While it does, the stick and A belong to the menu,
+        // not to the board.
+        public static bool IsUIFocused()
+        {
+            EventSystem eventSystem = EventSystem.current;
+            GameObject selected = eventSystem != null ? eventSystem.currentSelectedGameObject : null;
+            return selected != null && selected.activeInHierarchy;
+        }
     }
 }

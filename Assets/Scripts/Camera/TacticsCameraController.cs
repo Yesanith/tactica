@@ -80,9 +80,13 @@ namespace Tactica.Camera
         // so the serialised value keeps its meaning as a relative tuning knob.
         private const float FramingScale = 0.7f;
 
+        // The board cursor, read only to follow it with the gamepad.
+        private GridCursorHighlighter cursor;
+
         private void Awake()
         {
             ResetFraming();
+            cursor = FindAnyObjectByType<GridCursorHighlighter>();
         }
 
         // Start, not Awake: GridManager's dimensions are serialised so they would be readable
@@ -113,6 +117,7 @@ namespace Tactica.Camera
         private void Update()
         {
             HandlePan();
+            FollowPadCursor();
             HandleZoom();
             HandleSnapRotation();
             ApplyTransform();
@@ -184,6 +189,33 @@ namespace Tactica.Camera
             distance = Mathf.Clamp(longestSpan * framingPadding * FramingScale, minZoomDistance, maxZoomDistance);
 
             ApplyTransform();
+        }
+
+        // How far the gamepad's tile cursor may stray from the view's centre (world units, flat)
+        // before the camera drifts after it, and how fast it catches up.
+        private const float FollowSlack = 3f;
+        private const float FollowSharpness = 6f;
+
+        // With the pad, nothing else moves the view toward where the player is working: keep the
+        // tile cursor near the middle of the screen. The mouse points wherever it likes and the
+        // camera stays put.
+        private void FollowPadCursor()
+        {
+            if (!GridInput.GamepadActive || cursor == null || gridManagerRef == null || !cursor.HoveredTile.HasValue)
+            {
+                return;
+            }
+
+            Vector3 target = gridManagerRef.GridToWorldPosition(cursor.HoveredTile.Value);
+            Vector3 offset = Vector3.ProjectOnPlane(target - pivotPoint, Vector3.up);
+
+            if (offset.magnitude <= FollowSlack)
+            {
+                return;
+            }
+
+            Vector3 wanted = offset - offset.normalized * FollowSlack;
+            pivotPoint += wanted * Mathf.Clamp01(FollowSharpness * Time.unscaledDeltaTime);
         }
 
         // Moves the pivot to look at a specific world position, keeping the current angle/zoom.

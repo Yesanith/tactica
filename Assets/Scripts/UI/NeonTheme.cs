@@ -266,6 +266,11 @@ namespace Tactica.UI
             colors.fadeDuration = 0.06f;
             button.colors = colors;
 
+            // Assigning colors starts a fade from the current tint - Unity's default white on a
+            // button made this frame - so every rebuilt screen flashed white. Snap to the state's
+            // colour now; hover and press still fade as usual.
+            button.targetGraphic.CrossFadeColor(button.interactable ? colors.normalColor : colors.disabledColor, 0f, true, true);
+
             SetEdge(button.image.rectTransform, edge);
         }
 

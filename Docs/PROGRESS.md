@@ -611,6 +611,50 @@ runtime font atlases have and drew boxes; titles are bold cyan instead.
 use the same builders), and the fonts come from Windows at runtime - a release needs licensed
 font assets.
 
+### Gamepad support ✅ (2026-10-27)
+The whole game plays on a pad (Xbox layout), switching with the mouse automatically by whichever
+was touched last. Board: a tile cursor on the left stick / d-pad with key repeat, screen-relative at
+any camera angle, hopping holes; A selects, B cancels, Y / X / Start are Act / Move / Wait; the
+cursor starts each crew turn on the acting unit and the camera follows it. Deployment: A picks a
+crew member and places them, Start begins the fight. Camera: right stick pans, triggers zoom,
+shoulders snap 90 degrees. Menus: focus on the first button, d-pad / stick to move, A to press, B
+for Back; the focused button is clearly lit. Hints switch to pad wording.
+**Checked in the editor with a virtual pad:** main menu up/down (one step per press, stops at the
+ends), Continue with A, Crew and back with B, Shop with focus on the first Buy; deployment (cursor
+on the first crew member, placed Aria with A, Start began the fight); a turn - X move, cursor steps,
+A moved her, Y opened Act with focus, the cursor stayed put while the menu had the pad, B closed it,
+A on an ability did not also click the board, Start / Start waited and the cursor jumped to the next
+crew member; after LB the stick still moved the cursor the way the screen shows.
+**Fixed on the way:** a new screen kept the focus position of the previous one; a reopened Act menu
+started where it was left (the second fix was not re-run in the editor).
+**Not done:** no automated tests (the Input System test fixture is not set up); no remapping; only
+the Xbox names in hints; the move range is still the old red material.
+
+### Controller-friendly UI ✅ (2026-10-27)
+The first pad pass worked but was hard to use: the fight's commands were face buttons nobody told
+you about, the crew screen's focus started on the "< previous member" button and had to cross the
+page flips and tabs, long screens could scroll the focus out of sight, and Jack Out could not be
+reached at all.
+- **Fights, FFT-style:** on a crew turn the Act / Move / Wait list has the focus; choosing hands the
+  stick to the board, finishing or cancelling hands it back and the cursor snaps to the acting
+  unit. B on the list looks around the board, A or B returns. View arms / presses Jack Out.
+- **Crew screen:** LB/RB change member, LT/RT change tab; those buttons are skipped by the stick, so
+  focus starts on the tab's content. Each tab keeps its own focus position.
+- **Prompt strip** at the bottom: what every button does right now, per screen and per fight mode
+  (Select / Back / Crew / Tab; Choose / Look around / Act / Move / Wait; Move here / Target /
+  Cancel ...). Only with the pad in hand.
+- Focused buttons scroll into view on long screens. The target panel moved above the acting
+  unit's, leaving the bottom centre to the strip.
+**Checked in the editor with a virtual pad:** the crew screen (focus on the first job, RB to Rex,
+LB back, RT/LT through Equipment / Learn / Equipment), the prompt strip, the fight (commands
+focused on the crew's turn, B looked around and the cursor moved, A returned, Move chosen from the
+list then cancelled with B back to Act, the cursor snapped back to Aria, View armed Jack Out once).
+**A slip during testing:** pressing A on the Crew list toggled a crew member to Reserve in the
+user's real save, which saves at once; the save was restored from the copy taken before testing
+and checked byte for byte.
+**Not done:** button glyphs are coloured letters, not icons; the deploy panel's own buttons are
+mouse-only (the board covers the same actions); no remapping.
+
 ### Next up
 Content and design gaps against GAME_DESIGN.md, roughly in order of payoff:
 - **Balance:** play it by hand; the auto-battles measure the AI's play, not a player's. Spire Gate

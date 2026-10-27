@@ -98,6 +98,21 @@ Bir turda sırayla **Move** (hareket menzilini gör, tile'a tıkla), **Act** (ye
 | Q / E | Kamerayı 90° döndür |
 | HUD: Act / Move / Wait | Yetenek menüsü, hareket, bekle; harcanan eylem gri görünür |
 
+**Gamepad (Mevcut, 2026-10-27).** Hangi cihaza son dokunulduysa o kullanılır; geçiş kendiliğinden olur.
+
+| Gamepad | Tahtada (savaş, deploy) | Menüde |
+| --- | --- | --- |
+| Sol stick / D-pad | İmleci kare kare taşı (basılı tutunca tekrarlar) | Butonlar arasında gez |
+| A | Seç / onayla | Bas |
+| B | İptal; komut listesinde serbest bakış | Geri |
+| Y / X / Start | Act / Move / Wait (deploy'da Start savaşı başlatır) | - |
+| View | Jack Out (iki kez) | - |
+| LB / RB | Kamerayı 90° döndür | Önceki / sonraki crew üyesi |
+| LT, RT | Uzaklaştır, yakınlaştır | Önceki / sonraki sekme |
+| Sağ stick | Kamerayı kaydır | - |
+
+FFT akışı: crew'un turunda Act / Move / Wait listesi odaklanır; komut seçilince imleç tahtaya geçer, bitince ya da B ile iptal edilince listeye döner ve imleç oynayan birime geri gelir. Listede B ile tahtada serbestçe gezilir, A ya da B ile listeye dönülür. Ekranın altındaki şerit o anda her tuşun ne yaptığını yazar (yalnız gamepad kullanılırken). "Yukarı" kamera hangi yöne bakarsa ona göredir.
+
 Sıra şeridi (Turn Queue) CT tablosunun bir kopyasını ileri simüle ederek sonraki turları gösterir; hedef önizlemesi (örn. "7 dmg -> 8/15", "41% to hack") sonuçla aynı formülleri okuduğu için sonuçla çelişmez. Bayılmış birimler de CT kazanır; flatline sayıcısı aynı saat üzerinde işler. Bayılmış birim, flatline olana ya da Reboot edilene kadar tile'ı işgal eder.
 
 ### Savaş derinliği (Mevcut, Faz 11)

@@ -336,6 +336,48 @@ as changing `Level` directly.
 
 ---
 
+## Gamepad
+
+Input still has no action asset of its own: each layer reads devices in its own static helper, and
+the pad joins them there.
+
+- **`GridInput`** decides which device is in use (`GamepadActive`: any pad button or stick push
+  takes over, moving or clicking the mouse hands it back; computed once per frame so every caller
+  agrees), names pad buttons by meaning (`PadButton.Confirm/Cancel/Act/Move/Wait/RotateLeft/
+  RotateRight`, Xbox A/B/Y/X/Start/LB/RB), gives the tile cursor its steps with key repeat
+  (`GetCursorStep`), and says whether a menu holds the pad (`IsUIFocused`: the EventSystem has a
+  selection).
+- **`GridCursorHighlighter`** keeps a pad tile cursor (`MoveCursorTo`) instead of a pointer while the
+  pad is in use: stick steps are turned into grid steps by the camera's yaw, holes are hopped, A
+  raises the same `TileClicked` the mouse does - so combat and deployment need no pad code. While a
+  menu holds focus, and for the frame after it lets go, the board ignores the stick and A (A on a
+  menu button closes the menu in the same frame).
+- **`TacticsCameraController`** follows that cursor with some slack; **`CameraInput`** adds the right
+  stick (pan), triggers (zoom) and shoulders (snap).
+- **`PadFocus`** (UI) keeps a menu focused: with the pad, something in it is selected, at the same
+  position while the same screen is rebuilt (keyed by the screen title), at the top on a new one;
+  with the mouse, nothing is. `CampaignMenu` keeps its column focused and releases its overlays;
+  `CombatHUD` focuses the ability list and releases everything else, so a button clicked with the
+  mouse cannot keep the board from getting the pad. Selected is a visible state in `NeonTheme`.
+- Navigation and Submit/Cancel in menus are the `InputSystemUIInputModule`'s default actions;
+  B as Back, and Y/X/Start in a fight, are read by `CampaignMenu` and `CombatHUD` beside their keys.
+- **The fight's command list** (`CombatHUD.UpdatePadFocus`): on a crew turn with no command under
+  way, the authored Act / Move / Wait stack takes the pad's focus, FFT-style; a command hands the
+  stick to the board, and when it ends the focus returns and the cursor snaps back to the acting
+  unit. B on the list sets `lookingAround` (board cursor free, A or B returns).
+- **Menu shortcuts**: a screen sets `pageAction` (LB/RB) and `tabAction` (LT/RT) after
+  `BeginScreen`, which clears them; the crew screen pages members and tabs with them, and its
+  page-flip buttons are `PadFocus.SkipPadFocus` (navigation off) so the stick lands on content.
+  The focus key is the title plus the tab. View presses Jack Out in a fight.
+- **`PadFocus.ScrollIntoView`** keeps the focused button inside a scrolling screen's viewport.
+- **`PromptBar`** (its own overlay canvas, sorting 200): owners call `PromptBar.Set(...)` every
+  frame with `Join(button, meaning, ...)` pairs - `CampaignMenu` for menus and deployment,
+  `CombatHUD` per mode; a frame without a call, or with the mouse in hand, hides it.
+
+Testing with a virtual pad in the editor needs `InputSettings.editorInputBehaviorInPlayMode =
+AllDeviceInputAlwaysGoesToGameView` and `backgroundBehavior = IgnoreFocus` while the Game view is
+unfocused, or presses never reach the player loop. They are in-memory settings; nothing is saved.
+
 ## Camera — `Assets/Scripts/Camera/`
 
 **`TacticsCameraController`** drives everything from four values — `pivotPoint`, `yaw`, `pitch`,
